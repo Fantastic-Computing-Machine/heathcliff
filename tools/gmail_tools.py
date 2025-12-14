@@ -1,14 +1,12 @@
-from langchain.document_loaders import UnstructuredGmailLoader
+from typing import Any, List
 
 from langchain_community.tools.gmail import (
+    GmailCreateDraft,
+    GmailGetMessage,
+    GmailGetThread,
     GmailSearch,
     GmailSendMessage,
-    GmailGetMessage,
-    GmailCreateDraft,
-    GmailGetThread,
-    get_gmail_credentials,
 )
-
 
 gmail_tools = [
     GmailSearch(name="search_emails", description="Search for emails in Gmail"),
@@ -20,4 +18,7 @@ gmail_tools = [
     GmailGetThread(name="get_thread", description="Get an email thread"),
 ]
 
-credentials = get_gmail_credentials()
+def get_gmail_toolkit_tools() -> List[Any]:
+    """Expose LangChain Gmail tools for registry consumption."""
+
+    return list(gmail_tools)

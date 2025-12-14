@@ -1,19 +1,81 @@
-# heathcliff
-Assistant that just does stuff -- no BS.
+# Heathcliff 🎤
 
-## What is Heathcliff?
+**Voice-Activated AI Assistant that just does stuff -- no BS.**
 
-Heathcliff is a voice-enabled personal AI assistant that integrates with your daily services. Wake it up with "Heathcliff", give it commands, and watch it orchestrate tasks across Gmail, Calendar, Spotify, and more using LLM-powered decision making.
+Heathcliff is a voice-enabled personal AI assistant that integrates with your daily services. Wake it up with "Heathcliff", give it commands, and watch it orchestrate tasks across Gmail, Calendar, Spotify, Weather, News, and more using Gemini Flash 2.5-powered decision making.
+
+## Quick Start
+
+**Get up and running in 5 minutes:**
+
+```bash
+# 1. Clone and navigate
+git clone <your-repo-url>
+cd heathcliff
+
+# 2. Install system dependencies (Linux/WSL)
+sudo apt install python3-pyaudio portaudio19-dev espeak
+
+# 3. Set up Python environment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 4. Configure API keys
+cp .env.example .env
+# Edit .env and add your GEMINI_API_KEY + service keys
+# (Optional) Add LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY for observability
+
+# 5. Run in text mode (no voice hardware needed)
+python main.py --text
+
+# OR run in voice mode
+python main.py
+
+# OR launch the Streamlit dashboard
+streamlit run ui/Home.py
+```
+
+**That's it!** For detailed setup including Google OAuth, Spotify, and other integrations, see [SETUP.md](SETUP.md).
 
 ## Key Features
 
-- Voice activation with wake word detection
-- Gmail integration (read, search, send, draft)
-- Google Calendar management
-- Spotify playback control
-- LLM-powered task orchestration (Gemini 2.0 Flash)
-- Conversational context awareness with ChromaDB memory
-- LangGraph-based agent orchestration
+### 🎤 Voice Interface
+
+- Wake word detection ("Heathcliff")
+- Speech-to-text and text-to-speech
+- Conversational memory and context
+
+### 🔧 Integrations
+
+- **Gmail**: Read, search, send emails
+- **Google Calendar**: View schedule, create events
+- **Spotify**: Play music, control playback
+- **Weather**: Real-time weather updates
+- **News**: Latest headlines by topic
+- **Web Search**: DuckDuckGo + Wikipedia
+- **Telegram**: Send notifications
+- **Google Drive**: Read files
+
+### 🧠 Intelligence
+
+- Gemini Flash 2.5 LLM
+- LangGraph agent orchestration
+- ChromaDB vector memory
+- Multi-turn conversation context
+- Long-term memory storage
+
+### 📈 Observability
+
+- Built-in Langfuse tracing for every conversation
+- LangChain callback handler automatically captures Gemini prompts/completions
+- Tool usage + errors are streamed to Langfuse events for debugging
+
+### 💻 Interfaces
+
+- Voice mode (main.py)
+- Text mode for testing
+- Streamlit web dashboard
 
 ## Tech Stack
 
@@ -32,42 +94,63 @@ Heathcliff uses a LangGraph-based agent architecture with 4 nodes:
 3. **Tool Calling Node**: Executes requested tools (weather, time, etc.)
 4. **Output Node**: Saves conversation to memory, returns response
 
-## Setup
+## Usage Modes
 
-### Prerequisites
-
-Install system dependencies:
-```bash
-sudo apt install python3-pyaudio portaudio19-dev
-```
-
-### Installation
+### 1. Voice Mode (Default)
 
 ```bash
-pip install -r requirements.txt
+python main.py
 ```
 
-### Configuration
+- Say **"Heathcliff"** to activate
+- Speak your command
+- Heathcliff responds via audio
 
-1. Copy `.env.example` to `.env`:
+**Example:**
+
+```text
+[You say]: "Heathcliff"
+[Heathcliff]: *listening beep*
+[You say]: "What's the weather in London?"
+[Heathcliff]: "The current weather in London is 72°F and partly cloudy..."
+```
+
+### 2. Text Mode (Testing/No Audio)
+
 ```bash
-cp .env.example .env
+python main.py --text
 ```
 
-2. Add your Gemini API key to `.env`:
-```
-GEMINI_API_KEY=your-api-key-here
+- Type commands in terminal
+- Great for debugging and testing
+- No microphone/speakers required
+
+**Example:**
+
+```text
+You: What's the weather?
+Heathcliff: The current weather in New York is 68°F and sunny...
+
+You: Add an event to my calendar for tomorrow at 2pm
+Heathcliff: I've added an event to your calendar for tomorrow at 2:00 PM...
 ```
 
-3. (Optional) Configure LLM settings in `config.yaml`:
-```yaml
-llm:
-  model: "gemini-2.0-flash-exp"
-  temperature: 0.7
-  max_tokens: 1024
+### 3. Streamlit Dashboard
+
+```bash
+streamlit run ui/Home.py
 ```
 
-## Usage
+Access at `http://localhost:8501`
+
+**Dashboard Features:**
+
+- **Home**: Chat interface with Heathcliff
+- **Memories**: View, search, and add long-term memories
+- **Analytics**: Usage statistics and conversation insights
+- **Settings**: View API configuration and system status
+
+## Programmatic Usage
 
 ### Using the Agent Core (Programmatic)
 
@@ -122,11 +205,22 @@ context = memory.get_chat_context("weather", session_id="session-123")
 python app.py
 ```
 
+## Langfuse Observability
+
+Heathcliff now ships with first-class Langfuse instrumentation:
+
+1. Set `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and (optionally) `LANGFUSE_HOST` / `LANGFUSE_RELEASE` in `.env`.
+2. Start the assistant like normal; every agent run creates a Langfuse trace named `heathcliff.agent`.
+3. Gemini prompt/response pairs automatically stream through the Langfuse LangChain callback handler.
+4. Each external tool invocation is logged as a Langfuse event, so you can inspect failures and latency directly in the Langfuse UI.
+
+Disable observability anytime by setting `observability.langfuse.enabled` to `false` in `config.yaml`.
+
 Say "Heathcliff" to activate, then give your command.
 
 ## Example Conversations
 
-```
+```text
 User: Hello!
 Heathcliff: Hello! I'm Heathcliff, your personal AI assistant. How can I help you today?
 
@@ -140,46 +234,64 @@ User: What do you know about me?
 Heathcliff: Based on what I know, your name is Adi and you work as a software engineer.
 ```
 
-## Running Tests
-
-```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Run specific test files
-python -m pytest tests/test_memory_manager.py -v
-python -m pytest tests/test_agent_core.py -v
-python -m pytest tests/test_agent_integration.py -v
-python -m pytest tests/test_agent_e2e.py -v
-```
-
 ## Project Structure
 
-```
+```text
 heathcliff/
+├── main.py                  # Main entry point (voice/text modes)
 ├── core/
-│   ├── __init__.py
 │   ├── memory_manager.py    # ChromaDB-backed memory storage
 │   ├── agent_core.py        # LangGraph agent orchestrator
-│   └── audio_handler.py     # Voice I/O handling
+│   └── audio_handler.py     # Voice I/O (wake word, STT, TTS)
 ├── config/
 │   └── config_loader.py     # Configuration management
 ├── tools/                   # Tool integrations
-├── tests/                   # Test suite
-│   ├── test_memory_manager.py
-│   ├── test_agent_core.py
-│   ├── test_agent_integration.py
-│   └── test_agent_e2e.py
+│   ├── email_tool.py        # Gmail integration
+│   ├── calendar_tool.py     # Google Calendar
+│   ├── spotify_tool.py      # Spotify playback
+│   ├── info_tools.py        # Weather, news, web search
+│   └── comm_tools.py        # Telegram, Google Drive
+├── utils/
+│   └── google_auth.py       # OAuth2 credential manager
+├── ui/                      # Streamlit dashboard
+│   ├── Home.py              # Main chat interface
+│   └── pages/
+│       ├── 1_🧠_Memories.py
+│       ├── 2_📊_Analytics.py
+│       └── 3_⚙️_Settings.py
+├── plan/                    # Planning docs
+│   ├── INIT.md
+│   ├── TODO.md
+│   └── EXECUTION.md
+├── .env.example             # API key template
 ├── config.yaml              # Runtime configuration
 ├── requirements.txt         # Python dependencies
+├── SETUP.md                 # Detailed setup guide
 └── README.md
 ```
 
-## Status
+## Development Status
 
-Development Phase 2 Complete (v0.2.0):
-- Memory Manager with ChromaDB persistence
-- LangGraph-based Agent Core with Gemini 2.0 Flash
-- Multi-turn conversation support
-- Tool calling framework
-- 67 tests passing
+**Phase 4 Complete (v1.0.0)** ✅
+
+- ✅ Foundation Setup (Config, Memory, Audio)
+- ✅ Core Agent (LangGraph with Gemini Flash 2.5)
+- ✅ Tools Integration (Gmail, Calendar, Spotify, Weather, News, etc.)
+- ✅ UI & Integration (Voice mode, Text mode, Streamlit dashboard)
+- ⏳ Testing & Polish (Pending)
+
+**Ready for production use with basic testing!**
+
+## Contributing
+
+See [plan/EXECUTION.md](plan/EXECUTION.md) for architecture details and [plan/TODO.md](plan/TODO.md) for remaining tasks.
+
+## Documentation
+
+- **[SETUP.md](SETUP.md)**: Complete setup guide with API credentials and troubleshooting
+- **[plan/INIT.md](plan/INIT.md)**: Initial architecture and design decisions
+- **[plan/EXECUTION.md](plan/EXECUTION.md)**: Detailed implementation plan
+
+## License
+
+MIT

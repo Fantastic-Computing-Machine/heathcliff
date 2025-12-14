@@ -1,8 +1,10 @@
+from typing import Any, List
+
 from langchain_community.tools.calendar import (
     GoogleCalendarCreateTool,
+    GoogleCalendarDeleteTool,
     GoogleCalendarGetTool,
     GoogleCalendarUpdateTool,
-    GoogleCalendarDeleteTool,
 )
 
 
@@ -66,3 +68,14 @@ class CalendarTools:
 
 # Initialize the tool instance for usage
 calendar_tools = CalendarTools()
+
+
+def get_calendar_toolkit_tools() -> List[Any]:
+    """Expose Google Calendar LangChain tools as a list."""
+
+    return [
+        calendar_tools.create_event_tool,
+        calendar_tools.get_date_events_tool,
+        calendar_tools.update_event_tool,
+        calendar_tools.cancel_event_tool,
+    ]

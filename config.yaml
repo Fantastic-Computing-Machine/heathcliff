@@ -1,0 +1,128 @@
+# ABOUTME: Main configuration file for Heathcliff assistant
+# ABOUTME: Contains wake word settings, news preferences, and other runtime config
+
+# ============================================================================
+# MASTER'S INFORMATION - Heathcliff's understanding of you
+# ============================================================================
+master:
+  name: "Adi"
+  full_name: "Aditya Agarwal"
+  location: "Jersey City"  # Your primary location
+  timezone: "America/New_York"
+
+  # Schedule & Habits
+  typical_wake_time: "07:00"  # 24-hour format
+  typical_sleep_time: "23:00"
+  work_hours:
+    start: "09:00"
+    end: "18:00"
+
+  # Preferences
+  # music_taste:
+  #   - "Alternative Rock"
+  #   - "Indie"
+  #   - "Electronic"
+
+  favorite_artists:
+    - "Taylor Swift"
+    - "One Direction"
+    - "Imagine Dragons"
+
+  interests:
+    - "Programming"
+    - "AI/ML"
+    - "Startups"
+    - "Technology"
+    - "Building things"
+
+  # Communication style
+  formality_preference: "casual_professional"  # Options: formal, casual_professional, casual
+  humor_tolerance: "high"  # How much wit/sarcasm: low, medium, high
+
+  # Custom notes (Heathcliff will remember and reference these)
+  notes:
+    - "Prefers British spellings and measurements"
+    - "Works late sometimes - nocturnal tendencies"
+    - "Coffee enthusiast - never mock the caffeine dependency"
+    - "WSL environment - manual OAuth flows preferred"
+
+# ============================================================================
+
+# Wake word configuration
+wake_word: "heathcliff"
+
+# Audio settings
+audio:
+  sample_rate: 16000
+  chunk_size: 512
+
+# TTS settings
+tts:
+  rate: 175  # Words per minute
+  volume: 0.9  # 0.0 to 1.0
+  voice: null  # null = default voice
+
+# News preferences
+news:
+  sources:
+    - bbc-news
+    - techcrunch
+    - hacker-news
+    - the-verge
+    - wired
+    - engadget
+    - ars-technica
+    - y-combinator
+    - linkekdin
+    - github
+  topics:
+    - technology
+    - artificial-intelligence
+    - science
+    - startups
+    - programming
+    - gadgets
+  max_articles: 5
+
+# Weather settings
+weather:
+  default_city: "Jersey City"
+  units: "metric"  # metric or imperial
+
+# ChromaDB settings
+chroma:
+  persist_directory: "./chroma_db"
+
+# Memory settings
+memory:
+  max_chat_context: 10  # Number of recent messages to retrieve
+  max_memories: 5  # Number of long-term memories to retrieve
+
+# LLM settings
+llm:
+  model: "gemini-2.5-flash"
+  temperature: 0.5  # Lower for consistent British personality
+  max_tokens: 1536  # Increased for detailed responses
+  top_p: 0.7  # More formal vocabulary selection
+  max_iterations: 20  # Maximum reasoning loops to prevent redundant tool calls
+
+# Session settings
+session:
+  timeout_seconds: 300  # 5 minutes of inactivity = new session
+
+# Tooling preferences
+tools:
+  prefer_langchain_toolkits: true
+  search:
+    provider: "google"  # Options: google, duckduckgo
+    fallback_provider: "duckduckgo"
+    max_results: 5
+
+# Observability
+observability:
+  langfuse:
+    enabled: true
+    base_url: null  # Override Langfuse host/base URL if needed
+    environment: "local-dev"
+    user_id: "adiagarwal"
+    trace_name: "heathcliff.agent"
