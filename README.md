@@ -24,7 +24,8 @@ pip install -r requirements.txt
 # 4. Configure API keys
 cp .env.example .env
 # Edit .env and add your GEMINI_API_KEY + service keys
-# (Optional) Add LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY for observability
+# (Optional) Add LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY
+#          + LANGFUSE_BASE_URL (https://cloud.langfuse.com or us.cloud...) for observability
 
 # 5. Run in text mode (no voice hardware needed)
 python main.py --text
@@ -210,9 +211,16 @@ python app.py
 Heathcliff now ships with first-class Langfuse instrumentation:
 
 1. Set `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and (optionally) `LANGFUSE_HOST` / `LANGFUSE_RELEASE` in `.env`.
-2. Start the assistant like normal; every agent run creates a Langfuse trace named `heathcliff.agent`.
+   - If you're on Langfuse Cloud US/EU, also set `LANGFUSE_BASE_URL` to `https://us.cloud.langfuse.com` or `https://cloud.langfuse.com`.
+2. Start the assistant like normal; every agent run creates a Langfuse trace named `heathcliff.agent`, tagged with `user_id=adiagarwal` (configurable via `observability.langfuse.user_id`).
 3. Gemini prompt/response pairs automatically stream through the Langfuse LangChain callback handler.
 4. Each external tool invocation is logged as a Langfuse event, so you can inspect failures and latency directly in the Langfuse UI.
+
+**Troubleshooting tips**
+- If no traces appear, run `python -m utils.langfuse_client` or start Heathcliff with `LOG_LEVEL=DEBUG` to confirm the Langfuse callback is registering.
+- Double-check the Langfuse dashboard filters (environment/project) match the `observability.langfuse.environment` value in `config.yaml`.
+- Serverless/text-only sessions may exit before the SDK flushes; add `LANGFUSE_DISABLE_BACKGROUND_FLUSH=false` or keep the process alive for a few seconds.
+- The Langfuse callback handler automatically reads keys from environment variables. Passing `public_key`/`secret_key` directly will fail on newer Langfuse releases, so be sure the env vars are loaded before the process starts.
 
 Disable observability anytime by setting `observability.langfuse.enabled` to `false` in `config.yaml`.
 

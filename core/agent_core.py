@@ -12,7 +12,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from logger import logger
-from instructions.prompts import SYSTEM_PROMPT
+from instructions.prompts import build_system_prompt
 from utils.langfuse_client import (
     get_langfuse_callback_handler,
     log_langfuse_interaction,
@@ -81,6 +81,15 @@ class HeathcliffAgent:
         self.memory_manager = memory_manager
         self.prompt = self._build_prompt_template()
         self.tools = self._prepare_tools(tools)
+
+        # Keep original LangChain Tool objects for structured calling
+        self._original_langchain_tools = []
+        if tools:
+            if not isinstance(tools, dict):
+                self._original_langchain_tools = [
+                    tool for tool in tools if hasattr(tool, "name") and hasattr(tool, "description")
+                ]
+
         self.max_iterations = config.get(
             "llm.max_iterations", 20
         )  # Prevent infinite tool loops
@@ -108,6 +117,16 @@ class HeathcliffAgent:
             llm_kwargs["callbacks"] = self.callbacks
 
         self.llm = ChatGoogleGenerativeAI(**llm_kwargs)
+
+        # Bind tools for structured function calling (Gemini native tool use)
+        # This enables the LLM to return properly formatted tool calls
+        # instead of relying on text parsing
+        if self._original_langchain_tools:
+            self.llm_with_tools = self.llm.bind_tools(self._original_langchain_tools)
+            logger.info(f"✓ Bound {len(self._original_langchain_tools)} tools to LLM for structured function calling")
+        else:
+            self.llm_with_tools = self.llm
+            logger.warning("No LangChain tools found - falling back to text-based tool calling only")
 
         # Build the LangGraph workflow
         self.graph = self._build_graph()
@@ -198,9 +217,13 @@ class HeathcliffAgent:
     def _build_prompt_template(self) -> ChatPromptTemplate:
         """Create the shared prompt template for Gemini reasoning calls."""
 
+        # Load master information from config and build dynamic system prompt
+        master_info = self.config.get("master", {})
+        system_prompt = build_system_prompt(master_info)
+
         return ChatPromptTemplate.from_messages(
             [
-                ("system", SYSTEM_PROMPT),
+                ("system", system_prompt),
                 ("system", "Memories:\n{memories_block}"),
                 ("system", "Recent chat context:\n{context_block}"),
                 (
@@ -389,19 +412,55 @@ class HeathcliffAgent:
         )
 
         try:
-            response = self.llm.invoke(prompt_messages)
+            # Use LLM with bound tools for structured function calling
+            response = self.llm_with_tools.invoke(prompt_messages)
 
-            # Extract response text properly
+            # Extract response text properly from Gemini's structured format
             if hasattr(response, "content"):
                 content = response.content
-                response_text = content if isinstance(content, str) else str(content)
+
+                # Handle structured content blocks (Gemini native function calling format)
+                if isinstance(content, list) and len(content) > 0:
+                    # Extract text from first text block
+                    first_block = content[0]
+                    if isinstance(first_block, dict) and first_block.get("type") == "text":
+                        response_text = first_block.get("text", "")
+                    else:
+                        # Fallback: join all text blocks
+                        text_parts = [
+                            block.get("text", "")
+                            for block in content
+                            if isinstance(block, dict) and block.get("type") == "text"
+                        ]
+                        response_text = " ".join(text_parts) if text_parts else str(content)
+
+                # Handle plain string content (legacy format)
+                elif isinstance(content, str):
+                    response_text = content
+
+                # Fallback for unknown formats
+                else:
+                    response_text = str(content)
             else:
                 response_text = str(response)
 
             logger.debug(f"LLM response: {response_text[:100]}...")
 
-            # Check for tool requests
-            tool_calls = self._parse_tool_calls(response_text)
+            # APPROACH 1: Try structured tool calls first (Gemini native)
+            tool_calls = []
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                # Gemini returned structured tool calls - much more reliable!
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call.get("name", "").lower()
+                    tool_args = tool_call.get("args", {})
+                    tool_calls.append({"name": tool_name, "args": tool_args})
+
+                logger.info(f"Structured tool calls detected: {tool_calls}")
+            else:
+                # APPROACH 2: Fall back to regex parsing from text (legacy support)
+                tool_calls = self._parse_tool_calls(response_text)
+                if tool_calls:
+                    logger.info(f"Text-based tool calls detected (fallback): {tool_calls}")
 
             # Filter out duplicate tool calls from previous iterations
             called_tools = {msg.get("tool_name") for msg in tool_messages}
@@ -464,15 +523,32 @@ class HeathcliffAgent:
             # Parse arguments
             args = {}
             if args_str:
-                # Handle key=value pairs
-                arg_pattern = r"(\w+)=([^\s\]]+)"
-                arg_matches = re.findall(arg_pattern, args_str)
-                for key, value in arg_matches:
-                    args[key] = value
+                # Handle key=value pairs with support for:
+                # 1. Quoted values: query="taylor swift love story"
+                # 2. Unquoted multi-word values: query=taylor swift love story (until next param or end)
 
-                # Also handle positional argument (first word without =)
-                if not arg_matches:
-                    args["value"] = args_str.strip()
+                # First try to match quoted values: param="value with spaces"
+                quoted_pattern = r'(\w+)="([^"]*)"'
+                quoted_matches = re.findall(quoted_pattern, args_str)
+
+                if quoted_matches:
+                    # Use quoted values
+                    for key, value in quoted_matches:
+                        args[key] = value
+                else:
+                    # No quotes - try to parse intelligently
+                    # If there's an = sign, assume everything after it (until next param or ]) is the value
+                    if '=' in args_str:
+                        # Split on first = to get key and the rest
+                        parts = args_str.split('=', 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            # Value is everything after = (trimmed)
+                            value = parts[1].strip()
+                            args[key] = value
+                    else:
+                        # Positional argument (no = at all)
+                        args["value"] = args_str.strip()
 
             tool_calls.append({"name": tool_name, "args": args})
 

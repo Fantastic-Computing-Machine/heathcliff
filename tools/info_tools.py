@@ -51,17 +51,21 @@ def _init_google_tool(max_results: int) -> Optional[Any]:
     if _google_tool is None:
         try:
             from langchain_community.tools.google_search import GoogleSearchResults
+            from langchain_community.utilities import GoogleSearchAPIWrapper
         except ImportError:  # pragma: no cover - optional dependency
+            logger.warning("Google search dependencies not installed")
             return None
 
-        kwargs = _filter_kwargs_for_cls(
-            GoogleSearchResults,
-            {"num_results": max_results, "k": max_results, "max_results": max_results},
-        )
         try:
-            _google_tool = GoogleSearchResults(**kwargs)
-        except TypeError:
-            _google_tool = GoogleSearchResults()
+            # Create the API wrapper with environment credentials
+            api_wrapper = GoogleSearchAPIWrapper()
+
+            # Pass the wrapper to GoogleSearchResults
+            _google_tool = GoogleSearchResults(api_wrapper=api_wrapper)
+            logger.info("Google search tool initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Google search: {e}", exc_info=True)
+            return None
 
     return _google_tool
 
@@ -327,24 +331,49 @@ def wikipedia_search(query: str) -> str:
         Wikipedia article summary
     """
     try:
+        logger.debug(f"Searching Wikipedia for: {query}")
+
         # Search for the query
-        results = wikipedia.search(query, results=1)
+        results = wikipedia.search(query, results=3)  # Get top 3 results
 
         if not results:
+            logger.warning(f"No Wikipedia search results for: {query}")
             return f"No Wikipedia articles found for: {query}"
 
-        # Get summary of first result
-        summary = wikipedia.summary(results[0], sentences=5)
+        logger.debug(f"Wikipedia search results: {results}")
 
-        return f"{results[0]}:\n{summary}"
+        # Try each result until we find one that works
+        for result_title in results:
+            try:
+                logger.debug(f"Attempting to fetch summary for: {result_title}")
+                summary = wikipedia.summary(result_title, sentences=5, auto_suggest=False)
+                logger.info(f"Successfully retrieved Wikipedia summary for: {result_title}")
+                return f"{result_title}:\n{summary}"
+            except wikipedia.exceptions.PageError:
+                logger.debug(f"PageError for {result_title}, trying next result")
+                continue
+            except wikipedia.exceptions.DisambiguationError as e:
+                logger.debug(f"DisambiguationError for {result_title}, trying first option")
+                # Try the first disambiguation option
+                if e.options:
+                    try:
+                        summary = wikipedia.summary(e.options[0], sentences=5, auto_suggest=False)
+                        logger.info(f"Retrieved disambiguated summary for: {e.options[0]}")
+                        return f"{e.options[0]}:\n{summary}"
+                    except:
+                        continue
+
+        # If we exhausted all results
+        logger.warning(f"Failed to retrieve summary for any Wikipedia result for: {query}")
+        return f"No Wikipedia page found for: {query}"
 
     except wikipedia.exceptions.DisambiguationError as e:
-        # Handle disambiguation pages
+        # Handle top-level disambiguation
         options = ", ".join(e.options[:5])
+        logger.debug(f"Top-level disambiguation for '{query}': {options}")
         return f"Multiple results found for '{query}'. Please be more specific. Options: {options}"
-    except wikipedia.exceptions.PageError:
-        return f"No Wikipedia page found for: {query}"
     except Exception as e:
+        logger.error(f"Unexpected error searching Wikipedia for '{query}': {e}", exc_info=True)
         return f"Error searching Wikipedia: {str(e)}"
 
 

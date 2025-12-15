@@ -86,7 +86,7 @@ def get_google_credentials(
 # Common Google API scopes
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
-    # "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.compose",
 ]
 
@@ -97,4 +97,6 @@ CALENDAR_SCOPES = [
 
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
-ALL_GOOGLE_SCOPES = GMAIL_SCOPES + CALENDAR_SCOPES + DRIVE_SCOPES
+PEOPLE_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly"]
+
+ALL_GOOGLE_SCOPES = GMAIL_SCOPES + CALENDAR_SCOPES + DRIVE_SCOPES + PEOPLE_SCOPES

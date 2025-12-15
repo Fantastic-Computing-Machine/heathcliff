@@ -7,33 +7,33 @@
 ## Phase 1: Foundation Setup
 
 ### Task 1: Project Setup & Config Manager
-- [ ] Create project structure (`jarvis/` directories)
-- [ ] Create `.env.example` with all API key placeholders
-- [ ] Create `config.yaml` with default settings
-- [ ] Implement `config/config_loader.py`
-- [ ] Generate `requirements.txt`
-- [ ] Test config loading from both env and yaml
+- [x] Create project structure (`jarvis/` directories)
+- [x] Create `.env.example` with all API key placeholders
+- [x] Create `config.yaml` with default settings
+- [x] Implement `config/config_loader.py`
+- [x] Generate `requirements.txt`
+- [x] Test config loading from both env and yaml
 
 ### Task 2: Memory Manager (ChromaDB)
-- [ ] Implement `core/memory_manager.py`
-- [ ] Create 3 collections: memories, chat_messages, my_data
-- [ ] Implement `add_memory()` method
-- [ ] Implement `recall()` method
-- [ ] Implement `save_chat()` method
-- [ ] Implement `get_chat_context()` method
-- [ ] Implement `index_document()` method
-- [ ] Test all CRUD operations
-- [ ] Verify persistence across restarts
+- [x] Implement `core/memory_manager.py`
+- [x] Create 3 collections: memories, chat_messages, my_data
+- [x] Implement `add_memory()` method
+- [x] Implement `recall()` method
+- [x] Implement `save_chat()` method
+- [x] Implement `get_chat_context()` method
+- [x] Implement `index_document()` method
+- [x] Test all CRUD operations
+- [x] Verify persistence across restarts
 
 ### Task 3: Audio Handler (STT/TTS/Wake Word)
-- [ ] Implement `core/audio_handler.py`
-- [ ] Set up Porcupine wake word detection
-- [ ] Implement `listen_for_wake_word()` method
-- [ ] Implement `speech_to_text()` using Google Speech Recognition
-- [ ] Implement `text_to_speech()` using pyttsx3
-- [ ] Implement `listen_loop()` orchestration
-- [ ] Test wake word detection accuracy
-- [ ] Test STT/TTS pipeline end-to-end
+- [x] Implement `core/audio_handler.py`
+- [x] Set up Porcupine wake word detection
+- [x] Implement `listen_for_wake_word()` method
+- [x] Implement `speech_to_text()` using Google Speech Recognition
+- [x] Implement `text_to_speech()` using pyttsx3
+- [x] Implement `listen_loop()` orchestration
+- [x] Test wake word detection accuracy
+- [x] Test STT/TTS pipeline end-to-end
 
 ---
 
@@ -56,50 +56,50 @@
 ## Phase 3: Tools Integration
 
 ### Task 5: Email Tool
-- [ ] Implement `tools/email_tool.py`
-- [ ] Set up Gmail API OAuth2
-- [ ] Implement `read_emails()` tool
-- [ ] Implement `send_email()` tool
-- [ ] Register tools with LangChain
-- [ ] Test email reading
-- [ ] Test email sending
+- [x] Implement `tools/email_tool.py`
+- [x] Set up Gmail API OAuth2
+- [x] Implement `read_emails()` tool
+- [x] Implement `send_email()` tool
+- [x] Register tools with LangChain
+- [x] Test email reading
+- [x] Test email sending
 
 ### Task 6: Calendar Tool
-- [ ] Implement `tools/calendar_tool.py`
-- [ ] Set up Calendar API OAuth2
-- [ ] Implement `read_my_calendar()` tool (user calendar, read-only)
-- [ ] Implement `add_jarvis_event()` tool
-- [ ] Implement `list_jarvis_events()` tool
-- [ ] Register tools with LangChain
-- [ ] Test calendar operations
+- [x] Implement `tools/calendar_tool.py`
+- [x] Set up Calendar API OAuth2
+- [x] Implement `read_my_calendar()` tool (user calendar, read-only)
+- [x] Implement `add_jarvis_event()` tool
+- [x] Implement `list_jarvis_events()` tool
+- [x] Register tools with LangChain
+- [x] Test calendar operations
 
 ### Task 7: Spotify Tool
-- [ ] Implement `tools/spotify_tool.py`
-- [ ] Set up Spotify OAuth
-- [ ] Implement `play_track()` tool
-- [ ] Implement `pause_playback()` tool
-- [ ] Implement `current_track()` tool
-- [ ] Register tools with LangChain
-- [ ] Test playback control
+- [x] Implement `tools/spotify_tool.py`
+- [x] Set up Spotify OAuth
+- [x] Implement `play_track()` tool
+- [x] Implement `pause_playback()` tool
+- [x] Implement `current_track()` tool
+- [x] Register tools with LangChain
+- [x] Test playback control
 
 ### Task 8: Info Tools (News/Weather/Web)
-- [ ] Implement `tools/info_tools.py`
-- [ ] Implement `get_weather()` using OpenWeatherMap
-- [ ] Implement `get_news()` using NewsAPI
-- [ ] Implement `search_web()` tool
-- [ ] Implement `wikipedia_search()` tool
-- [ ] Register tools with LangChain
-- [ ] Test all info tools
+- [x] Implement `tools/info_tools.py`
+- [x] Implement `get_weather()` using OpenWeatherMap
+- [x] Implement `get_news()` using NewsAPI
+- [x] Implement `search_web()` tool
+- [x] Implement `wikipedia_search()` tool
+- [x] Register tools with LangChain
+- [x] Test all info tools
 
 ### Task 9: Communication Tools (Telegram/GDrive)
-- [ ] Implement `tools/comm_tools.py`
-- [ ] Set up Telegram Bot API
-- [ ] Implement `send_to_telegram()` tool
-- [ ] Set up Google Drive API OAuth2
-- [ ] Implement `read_gdrive_file()` tool
-- [ ] Register tools with LangChain
-- [ ] Test Telegram messaging
-- [ ] Test GDrive file reading
+- [x] Implement `tools/comm_tools.py`
+- [x] Set up Telegram Bot API
+- [x] Implement `send_to_telegram()` tool
+- [x] Set up Google Drive API OAuth2
+- [x] Implement `read_gdrive_file()` tool
+- [x] Register tools with LangChain
+- [x] Test Telegram messaging
+- [x] Test GDrive file reading
 
 ---
 

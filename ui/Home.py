@@ -15,6 +15,7 @@ from core.agent_core import HeathcliffAgent
 from tools import get_all_tools
 from utils.heathcliff_greetings import generate_greeting
 from datetime import datetime
+from logger import logger
 
 
 # Page config
@@ -86,6 +87,12 @@ if "session_start_time" not in st.session_state:
 if "greeting_shown" not in st.session_state:
     st.session_state.greeting_shown = False
 
+# Initialize persistent session_id for maintaining conversation context
+if "session_id" not in st.session_state:
+    import uuid
+    st.session_state.session_id = str(uuid.uuid4())
+    logger.info(f"Created new session: {st.session_state.session_id}")
+
 # Display Heathcliff's greeting ONCE at the start of the session
 if not st.session_state.greeting_shown and len(st.session_state.messages) == 0:
     greeting = generate_greeting(user_name="Adi", include_weather=True)
@@ -124,7 +131,8 @@ if chat_input_message := st.chat_input(
         # Status container for showing agent progress
         with st.status("Processing request...", expanded=True) as status:
             try:
-                for event in agent.stream_invoke(prompt):
+                # Use persistent session_id to maintain conversation context
+                for event in agent.stream_invoke(prompt, session_id=st.session_state.session_id):
                     if event["type"] == "status":
                         # Update status label with current phase
                         status.update(label=event["message"], state="running")
@@ -199,6 +207,9 @@ with st.sidebar:
     if st.button("🗑️ Clear Chat History", use_container_width=True):
         st.session_state.messages = []
         st.session_state.greeting_shown = False  # Reset greeting for new session
+        # Generate new session_id to clear conversation context
+        import uuid
+        st.session_state.session_id = str(uuid.uuid4())
         st.rerun()
 
     if st.button("🔄 New Session", use_container_width=True):
@@ -206,6 +217,9 @@ with st.sidebar:
         st.session_state.messages = []
         st.session_state.greeting_shown = False  # Reset greeting for new session
         st.session_state.session_start_time = datetime.now()  # Reset session time
+        # Generate new session_id to clear conversation context
+        import uuid
+        st.session_state.session_id = str(uuid.uuid4())
         st.success("New session started!")
         st.rerun()
 

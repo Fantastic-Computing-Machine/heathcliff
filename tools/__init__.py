@@ -23,6 +23,9 @@ __all__ = [
     "send_to_telegram",
     "read_gdrive_file",
     "get_comm_tools",
+    # People tools
+    "search_contacts",
+    "get_people_tools",
     # Aggregator
     "get_all_tools",
 ]
@@ -43,6 +46,9 @@ _TOOL_EXPORTS: Dict[str, Tuple[str, str]] = {
     "send_to_telegram": ("tools.comm_tools", "send_to_telegram"),
     "read_gdrive_file": ("tools.comm_tools", "read_gdrive_file"),
     "get_comm_tools": ("tools.comm_tools", "get_comm_tools"),
+    # People tools
+    "search_contacts": ("tools.people_tools", "search_contacts"),
+    "get_people_tools": ("tools.people_tools", "get_people_tools"),
 }
 
 _INTERNAL_EXPORTS = {
@@ -145,6 +151,7 @@ def get_all_tools(prefer_langchain_toolkits: bool | None = None) -> List[Any]:
             _import_attr("get_spotify_tools")(),
             _import_attr("get_info_tools")(),
             _import_attr("get_comm_tools")(),
+            _import_attr("get_people_tools")(),
         ]
     )
 
