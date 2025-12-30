@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from config import get_config
+from config import Config
 from logger import logger
 
 try:  # Optional dependency
@@ -37,32 +37,26 @@ _langfuse_client: Optional["Langfuse"] = None
 _langfuse_handler: Optional["CallbackHandler"] = None
 
 
-def _is_enabled(config) -> bool:
-    if not config.get("observability.langfuse.enabled", True):
-        return False
-    return bool(config.langfuse_public_key and config.langfuse_secret_key)
+def _is_enabled() -> bool:
+    return bool(Config.LANGFUSE_PUBLIC_KEY and Config.LANGFUSE_SECRET_KEY)
 
 
-def _resolve_base_url(config) -> Optional[str]:
-    return (
-        config.get("observability.langfuse.base_url")
-        or config.langfuse_base_url
-        or config.langfuse_host
-    )
+def _resolve_base_url() -> Optional[str]:
+    return Config.LANGFUSE_BASE_URL or Config.LANGFUSE_HOST
 
 
-def _build_kwargs(config) -> Dict[str, Any]:
+def _build_kwargs() -> Dict[str, Any]:
     kwargs: Dict[str, Any] = {
-        "public_key": config.langfuse_public_key,
-        "secret_key": config.langfuse_secret_key,
+        "public_key": Config.LANGFUSE_PUBLIC_KEY,
+        "secret_key": Config.LANGFUSE_SECRET_KEY,
     }
 
-    base_url = _resolve_base_url(config)
+    base_url = _resolve_base_url()
     if base_url:
         kwargs["host"] = base_url
 
-    if config.langfuse_release:
-        kwargs["release"] = config.langfuse_release
+    if Config.LANGFUSE_RELEASE:
+        kwargs["release"] = Config.LANGFUSE_RELEASE
 
     return kwargs
 
@@ -71,7 +65,7 @@ def get_langfuse_client() -> Optional["Langfuse"]:
     """Return cached Langfuse client instance if configuration exists."""
 
     global _langfuse_client
-    config = get_config()
+    config = Config
 
     if Langfuse is None:
         if _LANGFUSE_IMPORT_ERROR:
@@ -81,11 +75,11 @@ def get_langfuse_client() -> Optional["Langfuse"]:
             )
         return None
 
-    if not _is_enabled(config):
+    if not _is_enabled():
         return None
 
     if _langfuse_client is None:
-        kwargs = _build_kwargs(config)
+        kwargs = _build_kwargs()
         try:
             _langfuse_client = Langfuse(**kwargs)
             logger.info("Langfuse client initialized")
@@ -107,7 +101,7 @@ def get_langfuse_callback_handler() -> Optional["CallbackHandler"]:
     """
 
     global _langfuse_handler
-    config = get_config()
+    config = Config
 
     if CallbackHandler is None:
         if _CALLBACK_IMPORT_ERROR:
@@ -116,7 +110,7 @@ def get_langfuse_callback_handler() -> Optional["CallbackHandler"]:
             )
         return None
 
-    if not _is_enabled(config):
+    if not _is_enabled():
         return None
 
     # Ensure the client is initialized before instantiating handler
@@ -151,20 +145,19 @@ def log_langfuse_interaction(
     if not client or not hasattr(client, "trace"):
         return
 
-    config = get_config()
-    user_id = config.get("observability.langfuse.user_id", "adiagarwal")
+    user_id = Config.LANGFUSE_USER_ID
     metadata: Dict[str, Any] = {
         "session_id": session_id,
         "status": status,
     }
-    environment = config.get("observability.langfuse.environment")
+    environment = Config.ENVIRONMENT
     if environment:
         metadata["environment"] = environment
     if extra_metadata:
         metadata.update(extra_metadata)
 
     payload = {
-        "name": config.get("observability.langfuse.trace_name", "heathcliff.agent"),
+        "name": Config.TRACE_NAME,
         "input": {"user_input": user_input},
         "output": {"assistant_response": response},
         "user_id": user_id,
@@ -204,8 +197,8 @@ def log_langfuse_tool_event(
         "metadata": {
             "session_id": session_id,
             "status": status,
-            "environment": get_config().get("observability.langfuse.environment"),
-            "user_id": get_config().get("observability.langfuse.user_id", "adiagarwal"),
+            "environment": Config.ENVIRONMENT,
+            "user_id": getattr(Config, "LANGFUSE_USER_ID", "adiagarwal"),
         },
         "level": "DEFAULT",
     }

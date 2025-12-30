@@ -1,52 +1,51 @@
 # Heathcliff Implementation Plan
 
 ## Task 1: Project Setup & Config Manager
+
 **Assign to**: Assistant A
 
 **Deliverables**
+
 ```
 heathcliff/
 ├── .env.example
-├── config.yaml
+├── config/config.py
 ├── config/
-│   └── config_loader.py
+│   └── __init__.py
 └── requirements.txt
 ```
 
 **Implementation**
-```python
-# config/config_loader.py
-import yaml
-from dotenv import load_dotenv
-import os
 
-class Config:
-    def __init__(self):
-        load_dotenv()
-        with open('config.yaml') as f:
-            self.yaml_config = yaml.safe_load(f)
-        self.gemini_key = os.getenv('GEMINI_API_KEY')
-        self.telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
+```python
+# config/__init__.py
+from config.config import Conf
+
+Config = Conf()
 ```
 
 **Docs**
-- dotenv: https://pypi.org/project/python-dotenv/
-- PyYAML: https://pyyaml.org/wiki/PyYAMLDocumentation
+
+- dotenv: <https://pypi.org/project/python-dotenv/>
+- PyYAML: <https://pyyaml.org/wiki/PyYAMLDocumentation>
 
 **Requirements**
+
 - Create `.env.example` with all key names
-- Create `config.yaml` with wake_word, news sources
-- Write `config_loader.py` to merge env + yaml
+- Create `config/config.py` with wake_word, news sources
+- Expose singleton `Config` in `config/__init__.py`
 - Generate `requirements.txt`
 
 ---
 
 ## Task 2: Memory Manager (ChromaDB)
+
 **Assign to**: Assistant B
 
 **Deliverable**: `core/memory_manager.py`
 
 **Implementation**
+
 ```python
 import chromadb
 import uuid
@@ -81,9 +80,11 @@ class MemoryManager:
 ```
 
 **Docs**
-- ChromaDB: https://docs.trychroma.com/getting-started
+
+- ChromaDB: <https://docs.trychroma.com/getting-started>
 
 **Requirements**
+
 - 3 collections: memories, chat_messages, my_data
 - Metadata: timestamp, type, category, session_id
 - Query methods with n_results parameter
@@ -92,11 +93,13 @@ class MemoryManager:
 ---
 
 ## Task 3: Audio Handler (STT/TTS/Wake Word)
+
 **Assign to**: Assistant C
 
 **Deliverable**: `core/audio_handler.py`
 
 **Implementation**
+
 ```python
 import speech_recognition as sr
 import pyttsx3
@@ -126,11 +129,13 @@ class AudioHandler:
 ```
 
 **Docs**
-- SpeechRecognition: https://pypi.org/project/SpeechRecognition/
-- pyttsx3: https://pyttsx3.readthedocs.io/
-- Porcupine: https://picovoice.ai/docs/porcupine/
+
+- SpeechRecognition: <https://pypi.org/project/SpeechRecognition/>
+- pyttsx3: <https://pyttsx3.readthedocs.io/>
+- Porcupine: <https://picovoice.ai/docs/porcupine/>
 
 **Requirements**
+
 - Wake word detection with Porcupine
 - Google Speech Recognition for STT
 - pyttsx3 for TTS
@@ -139,11 +144,13 @@ class AudioHandler:
 ---
 
 ## Task 4: Gemini Agent Core
+
 **Assign to**: Assistant D
 
 **Deliverable**: `core/agent_core.py`
 
 **Implementation**
+
 ```python
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
@@ -158,7 +165,7 @@ class HeathcliffAgent:
     def __init__(self, config, memory_manager):
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash-exp",
-            google_api_key=config.gemini_key
+            google_api_key=config.GEMINI_API_KEY
         )
         self.memory = memory_manager
         self.graph = self._build_graph()
@@ -175,10 +182,12 @@ class HeathcliffAgent:
 ```
 
 **Docs**
-- LangChain Google GenAI: https://python.langchain.com/docs/integrations/chat/google_generative_ai
-- LangGraph: https://langchain-ai.github.io/langgraph/
+
+- LangChain Google GenAI: <https://python.langchain.com/docs/integrations/chat/google_generative_ai>
+- LangGraph: <https://langchain-ai.github.io/langgraph/>
 
 **Requirements**
+
 - Use Gemini Flash 2.5 via LangChain
 - LangGraph StateGraph with nodes
 - Integrate MemoryManager for context retrieval
@@ -187,11 +196,13 @@ class HeathcliffAgent:
 ---
 
 ## Task 5: Tools - Email
+
 **Assign to**: Assistant E
 
 **Deliverable**: `tools/email_tool.py`
 
 **Implementation**
+
 ```python
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -209,9 +220,11 @@ def send_email(to: str, subject: str, body: str):
 ```
 
 **Docs**
-- Gmail API Python: https://developers.google.com/gmail/api/quickstart/python
+
+- Gmail API Python: <https://developers.google.com/gmail/api/quickstart/python>
 
 **Requirements**
+
 - OAuth2 with credentials.json
 - Read emails (list + get)
 - Send email (messages.send)
@@ -220,11 +233,13 @@ def send_email(to: str, subject: str, body: str):
 ---
 
 ## Task 6: Tools - Calendar
+
 **Assign to**: Assistant F
 
 **Deliverable**: `tools/calendar_tool.py`
 
 **Implementation**
+
 ```python
 from langchain.tools import tool
 
@@ -245,7 +260,8 @@ def list_heathcliff_events():
 ```
 
 **Docs**
-- Calendar API: https://developers.google.com/calendar/api/quickstart/python
+
+- Calendar API: <https://developers.google.com/calendar/api/quickstart/python>
 
 **Requirements**
 
@@ -256,11 +272,13 @@ def list_heathcliff_events():
 ---
 
 ## Task 7: Tools - Spotify
+
 **Assign to**: Assistant G
 
 **Deliverable**: `tools/spotify_tool.py`
 
 **Implementation**
+
 ```python
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -283,9 +301,11 @@ def current_track():
 ```
 
 **Docs**
-- Spotipy: https://spotipy.readthedocs.io/
+
+- Spotipy: <https://spotipy.readthedocs.io/>
 
 **Requirements**
+
 - SpotifyOAuth with client_id/secret
 - Player control: play, pause, skip, volume
 - Return as LangChain tools
@@ -293,11 +313,13 @@ def current_track():
 ---
 
 ## Task 8: Tools - News/Weather/Web
+
 **Assign to**: Assistant H
 
 **Deliverable**: `tools/info_tools.py`
 
 **Implementation**
+
 ```python
 from langchain.tools import tool
 import requests
@@ -324,11 +346,13 @@ def wikipedia_search(query: str):
 ```
 
 **Docs**
-- OpenWeatherMap: https://openweathermap.org/api
-- NewsAPI: https://newsapi.org/docs
-- Wikipedia: https://pypi.org/project/wikipedia/
+
+- OpenWeatherMap: <https://openweathermap.org/api>
+- NewsAPI: <https://newsapi.org/docs>
+- Wikipedia: <https://pypi.org/project/wikipedia/>
 
 **Requirements**
+
 - Weather from OpenWeatherMap
 - News from NewsAPI (filter by sources in config)
 - Web search (use requests or SerpAPI)
@@ -337,11 +361,13 @@ def wikipedia_search(query: str):
 ---
 
 ## Task 9: Tools - Telegram/GDrive
+
 **Assign to**: Assistant I
 
 **Deliverable**: `tools/comm_tools.py`
 
 **Implementation**
+
 ```python
 from telegram import Bot
 from langchain.tools import tool
@@ -358,10 +384,12 @@ def read_gdrive_file(file_id: str):
 ```
 
 **Docs**
-- python-telegram-bot: https://docs.python-telegram-bot.org/
-- Drive API: https://developers.google.com/drive/api/quickstart/python
+
+- python-telegram-bot: <https://docs.python-telegram-bot.org/>
+- Drive API: <https://developers.google.com/drive/api/quickstart/python>
 
 **Requirements**
+
 - Telegram Bot API (get chat_id from config)
 - GDrive OAuth2 (same as Gmail)
 - Return as LangChain tools
@@ -369,11 +397,13 @@ def read_gdrive_file(file_id: str):
 ---
 
 ## Task 10: Streamlit UI
+
 **Assign to**: Assistant J
 
 **Deliverable**: `ui/streamlit_app.py`
 
 **Implementation**
+
 ```python
 import streamlit as st
 from core.memory_manager import MemoryManager
@@ -397,31 +427,35 @@ with tab3:
 ```
 
 **Docs**
-- Streamlit: https://docs.streamlit.io/
+
+- Streamlit: <https://docs.streamlit.io/>
 
 **Requirements**
+
 - 3 tabs: Chat History, Memories, Settings
 - Read from ChromaDB collections
 - Display with timestamps
-- Settings: edit config.yaml values
+- Settings: edit config/config.py values
 
 ---
 
 ## Task 11: Main Orchestrator
+
 **Assign to**: Assistant K
 
 **Deliverable**: `main.py`
 
 **Implementation**
+
 ```python
 from core.audio_handler import AudioHandler
 from core.agent_core import HeathcliffAgent
 from core.memory_manager import MemoryManager
-from config.config_loader import Config
+from config import Config
 
 def main():
-    config = Config()
-    memory = MemoryManager()
+    config = Config
+    memory = MemoryManager(config=config)
     agent = HeathcliffAgent(config, memory)
     audio = AudioHandler(config.yaml_config['wake_word'])
 
@@ -436,6 +470,7 @@ if __name__ == "__main__":
 ```
 
 **Requirements**
+
 - Initialize all components
 - Connect audio → agent → memory
 - Handle graceful shutdown
@@ -458,10 +493,12 @@ Task 11 (Main) → All
 ## Execution Order
 
 **Parallel** (can run simultaneously):
+
 - Tasks 1, 2, 3
 - Tasks 5, 6, 7, 8, 9 (after Task 1)
 
 **Sequential**:
+
 1. Task 1
 2. Tasks 2, 3, 5-9 (parallel)
 3. Task 4 (needs 2, 5-9)

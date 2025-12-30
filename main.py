@@ -2,11 +2,12 @@
 # ABOUTME: Orchestrates audio, agent, and memory components
 
 import sys
+import uuid
 import signal
 from datetime import datetime
 
-from config import get_config
-from core.memory_manager import MemoryManager
+from config import Config
+from core.memory_manager import MemoryManager, AgentMemoryError
 from core.audio_handler import AudioHandler
 from core.agent_core import HeathcliffAgent
 from tools import get_all_tools
@@ -20,33 +21,28 @@ class HeathcliffAssistant:
         """Initialize all components."""
         logger.info("Starting Heathcliff Assistant...")
 
-        # Load configuration
-        self.config = get_config()
-
-        # Validate configuration
-        if not self.config.validate():
-            logger.error("Configuration validation failed. Please check your .env file.")
-            sys.exit(1)
-
         # Initialize memory manager
         logger.info("Initializing memory manager...")
-        self.memory = MemoryManager(
-            persist_dir=self.config.get('chroma.persist_directory', './chroma_db')
-        )
+        try:
+            self.memory = MemoryManager()
+        except AgentMemoryError as exc:
+            logger.error(str(exc))
+            print("Memory Not found, Heathcliff shutting down.")
+            sys.exit(1)
 
         # Initialize agent with tools
         logger.info("Initializing agent with tools...")
         tools = get_all_tools()
-        self.agent = HeathcliffAgent(
-            config=self.config,
-            memory_manager=self.memory,
-            tools=tools
-        )
+        self.agent = HeathcliffAgent(memory_manager=self.memory, tools=tools)
 
         # Initialize audio handler
         logger.info("Initializing audio handler...")
-        wake_word = self.config.get('wake_word', 'heathcliff')
+        wake_word = Config.WAKE_WORD
         self.audio = AudioHandler(wake_word=wake_word)
+
+        # Initialize session
+        self.session_id = str(uuid.uuid4())
+        logger.info(f"Session ID: {self.session_id}")
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -76,7 +72,7 @@ class HeathcliffAssistant:
         """
         try:
             logger.info(f"Processing: {text}")
-            response = self.agent.invoke(text)
+            response = self.agent.invoke(text, session_id=self.session_id)
             logger.info(f"Response: {response}")
             return response
         except Exception as e:
@@ -100,7 +96,7 @@ class HeathcliffAssistant:
             try:
                 user_input = input("You: ").strip()
 
-                if user_input.lower() in ['quit', 'exit', 'bye']:
+                if user_input.lower() in ["quit", "exit", "bye"]:
                     print("Goodbye!")
                     break
 
@@ -121,26 +117,27 @@ class HeathcliffAssistant:
 def main():
     """Main entry point."""
     # Parse command line arguments
-    mode = 'voice'  # Default mode
+    mode = "voice"  # Default mode
 
     if len(sys.argv) > 1:
         arg = sys.argv[1]
 
         # Support both --text and mode=text formats
-        if arg in ['--text', '-t'] or arg == 'mode=text':
-            mode = 'text'
-        elif arg in ['--voice', '-v'] or arg == 'mode=voice':
-            mode = 'voice'
-        elif arg.startswith('mode='):
+        if arg in ["--text", "-t"] or arg == "mode=text":
+            mode = "text"
+        elif arg in ["--voice", "-v"] or arg == "mode=voice":
+            mode = "voice"
+        elif arg.startswith("mode="):
             # Parse mode=value format
-            mode_value = arg.split('=', 1)[1].lower()
-            if mode_value in ['text', 'voice']:
+            mode_value = arg.split("=", 1)[1].lower()
+            if mode_value in ["text", "voice"]:
                 mode = mode_value
             else:
                 print(f"Error: Invalid mode '{mode_value}'. Must be 'text' or 'voice'.")
                 sys.exit(1)
-        elif arg in ['--help', '-h']:
-            print("""
+        elif arg in ["--help", "-h"]:
+            print(
+                """
 Heathcliff Voice Assistant
 
 Usage:
@@ -164,7 +161,8 @@ Text Mode:
     - Type your commands
     - Responses are printed to console
     - Useful for testing without audio hardware
-            """)
+            """
+            )
             sys.exit(0)
         else:
             print(f"Error: Unknown argument '{arg}'. Use --help for usage information.")
@@ -174,7 +172,7 @@ Text Mode:
     try:
         assistant = HeathcliffAssistant()
 
-        if mode == 'text':
+        if mode == "text":
             assistant.run_text_mode()
         else:
             assistant.run_voice_mode()

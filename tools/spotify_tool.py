@@ -7,11 +7,14 @@ import spotipy
 from langchain.tools import tool
 from spotipy.oauth2 import SpotifyOAuth
 
-from config import get_config
+from config import Config
 from logger import logger
 
 _spotify_client: Optional[spotipy.Spotify] = None
 
+from spotipy.oauth2 import CacheFileHandler
+
+SPOTIFY_CACHE_PATH = ".spotify_cache"
 
 def _get_spotify_client() -> spotipy.Spotify:
     """Get authenticated Spotify client (singleton).
@@ -25,7 +28,6 @@ def _get_spotify_client() -> spotipy.Spotify:
     global _spotify_client
 
     if _spotify_client is None:
-        config = get_config()
         logger.debug("Initializing Spotify client with OAuth")
 
         # OAuth Configuration:
@@ -34,11 +36,12 @@ def _get_spotify_client() -> spotipy.Spotify:
         # - cache_path: .spotify_cache stores refresh token for automatic token renewal
         # - open_browser: False (manual OAuth flow works better in WSL environment)
         auth_manager = SpotifyOAuth(
-            client_id=config.spotify_client_id,
-            client_secret=config.spotify_client_secret,
+            client_id=Config.SPOTIFY_CLIENT_ID,
+            client_secret=Config.SPOTIFY_CLIENT_SECRET,
             redirect_uri="http://127.0.0.1:8100/callback",
             scope="user-modify-playback-state user-read-playback-state user-read-currently-playing",
-            cache_path=".spotify_cache",
+            # cache_path=SPOTIFY_CACHE_PATH,
+            cache_handler=CacheFileHandler(cache_path=SPOTIFY_CACHE_PATH),
             open_browser=False,
         )
 

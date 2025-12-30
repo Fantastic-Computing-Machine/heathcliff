@@ -162,19 +162,19 @@ def get_weather(location: str | None = None) -> str:
         Weather description with temperature, conditions, and humidity
     """
     try:
-        config = get_config()
-        api_key = config.openweathermap_key
+        config = Config
+        api_key = config.OPENWEATHERMAP_API_KEY
 
         if not api_key:
             return "Weather API key not configured"
 
         if location is None:
             logger.debug("No location provided for weather; using default from config")
-            location = config.get("weather.default_city", "Jersey City")
+            location = config.DEFAULT_CITY
 
         logger.debug(f"Fetching weather for location: {location}")
 
-        units = config.get("weather.units", "metric")
+        units = config.UNITS
         temp_unit = "°C" if units == "metric" else "°F"
 
         url = f"http://api.openweathermap.org/data/2.5/weather"
@@ -222,14 +222,14 @@ def get_news(category: str = "technology") -> str:
         String with news headlines and descriptions
     """
     try:
-        config = get_config()
-        api_key = config.newsapi_key
+        config = Config
+        api_key = config.NEWS_API_KEY
 
         if not api_key:
             return "News API key not configured"
 
-        sources = config.get("news.sources", ["bbc-news", "techcrunch"])
-        max_articles = config.get("news.max_articles", 5)
+        sources = config.DEFAULT_SOURCES
+        max_articles = config.MAX_ARTICLES
 
         url = "https://newsapi.org/v2/top-headlines"
         params = {
@@ -276,20 +276,15 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
         Search results summary
     """
     try:
-        config = get_config()
-        search_cfg = config.get("tools.search", {})
-        max_results = (
-            search_cfg.get("max_results")
-            if isinstance(search_cfg, dict)
-            else config.get("tools.search.max_results", 5)
-        )
-        primary_provider = provider or config.get("tools.search.provider", "google")
+        config = Config
+        max_results = 5
+        primary_provider = provider or "google"
         response = _dispatch_search(primary_provider, query, max_results, config)
 
         if response:
             return response
 
-        fallback_provider = config.get("tools.search.fallback_provider", "duckduckgo")
+        fallback_provider = "duckduckgo"
         if fallback_provider and fallback_provider != primary_provider:
             fallback_response = _dispatch_search(
                 fallback_provider, query, max_results, config

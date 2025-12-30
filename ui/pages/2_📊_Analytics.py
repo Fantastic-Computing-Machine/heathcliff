@@ -1,19 +1,22 @@
 # ABOUTME: Streamlit multipage app - Analytics and insights page
 # ABOUTME: View usage statistics and conversation patterns
 
-import streamlit as st
-import pandas as pd
-import sys
 import os
+import sys
 from datetime import datetime
 
+import pandas as pd
+import streamlit as st
+
 # Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from core.memory_manager import MemoryManager
 
-
 st.set_page_config(page_title="Analytics", page_icon="📊", layout="wide")
+
 
 # Initialize memory
 @st.cache_resource
@@ -35,22 +38,18 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.metric(
         "💾 Total Memories",
-        stats['memories'],
-        help="Long-term facts and preferences stored"
+        stats["memories"],
+        help="Long-term facts and preferences stored",
     )
 
 with col2:
-    st.metric(
-        "💬 Chat Messages",
-        stats['chats'],
-        help="Total conversation turns"
-    )
+    st.metric("💬 Chat Messages", stats["chats"], help="Total conversation turns")
 
 with col3:
     st.metric(
         "📄 Documents Indexed",
-        stats['documents'],
-        help="Emails, files, and other documents"
+        stats["documents"],
+        help="Emails, files, and other documents",
     )
 
 st.markdown("---")
@@ -64,23 +63,25 @@ with col_left:
 
     recent_chats = memory.chats.get(limit=20)
 
-    if recent_chats and recent_chats.get('metadatas'):
+    if recent_chats and recent_chats.get("metadatas"):
         activity_data = []
-        for doc, meta in zip(recent_chats['documents'], recent_chats['metadatas']):
-            activity_data.append({
-                'Role': meta.get('role', 'unknown').capitalize(),
-                'Message': doc[:50] + ('...' if len(doc) > 50 else ''),
-                'Session': meta.get('session', 'unknown')[:8],
-                'Time': meta.get('timestamp', 'unknown')[:19] if meta.get('timestamp') else 'N/A'
-            })
+        for doc, meta in zip(recent_chats["documents"], recent_chats["metadatas"]):
+            activity_data.append(
+                {
+                    "Role": meta.get("role", "unknown").capitalize(),
+                    "Message": doc[:50] + ("..." if len(doc) > 50 else ""),
+                    "Session": meta.get("session", "unknown")[:8],
+                    "Time": (
+                        meta.get("timestamp", "unknown")[:19]
+                        if meta.get("timestamp")
+                        else "N/A"
+                    ),
+                }
+            )
 
         if activity_data:
             df = pd.DataFrame(activity_data)
-            st.dataframe(
-                df,
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.info("No recent activity to display")
 
@@ -88,21 +89,20 @@ with col_left:
 with col_right:
     st.subheader("🗂️ Memory Distribution")
 
-    all_memories = memory.memories.get(limit=1000)
+    all_memories = memory.memories.get(limit=300)
 
-    if all_memories and all_memories.get('metadatas'):
+    if all_memories and all_memories.get("metadatas"):
         categories = {}
-        for meta in all_memories['metadatas']:
-            cat = meta.get('category', 'general')
+        for meta in all_memories["metadatas"]:
+            cat = meta.get("category", "general")
             categories[cat] = categories.get(cat, 0) + 1
 
         if categories:
             df = pd.DataFrame(
-                list(categories.items()),
-                columns=['Category', 'Count']
-            ).sort_values('Count', ascending=False)
+                list(categories.items()), columns=["Category", "Count"]
+            ).sort_values("Count", ascending=False)
 
-            st.bar_chart(df.set_index('Category'))
+            st.bar_chart(df.set_index("Category"))
 
             st.caption(f"**Total Categories**: {len(categories)}")
         else:
@@ -120,10 +120,12 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("**Unique Sessions**")
 
-    all_chats = memory.chats.get(limit=1000)
+    all_chats = memory.chats.get(limit=300)
 
-    if all_chats and all_chats.get('metadatas'):
-        sessions = set(meta.get('session', 'unknown') for meta in all_chats['metadatas'])
+    if all_chats and all_chats.get("metadatas"):
+        sessions = set(
+            meta.get("session", "unknown") for meta in all_chats["metadatas"]
+        )
         st.metric("Total Sessions", len(sessions))
 
         st.caption("A session is a continuous conversation period")
@@ -133,16 +135,13 @@ with col1:
 with col2:
     st.markdown("**Message Distribution**")
 
-    if all_chats and all_chats.get('metadatas'):
+    if all_chats and all_chats.get("metadatas"):
         roles = {}
-        for meta in all_chats['metadatas']:
-            role = meta.get('role', 'unknown')
+        for meta in all_chats["metadatas"]:
+            role = meta.get("role", "unknown")
             roles[role] = roles.get(role, 0) + 1
 
-        role_df = pd.DataFrame(
-            list(roles.items()),
-            columns=['Role', 'Messages']
-        )
+        role_df = pd.DataFrame(list(roles.items()), columns=["Role", "Messages"])
 
         st.dataframe(role_df, use_container_width=True, hide_index=True)
     else:

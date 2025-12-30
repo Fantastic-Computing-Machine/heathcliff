@@ -15,7 +15,7 @@ This file serves as the **working memory** for all coding agents on the Heathcli
 ## Code Patterns & Implementation Notes
 
 ### Phase 1 Foundation - COMPLETED
-- **Config Management**: Singleton pattern in `config/config_loader.py` with `get_config()` function
+- **Config Management**: Singleton `Config` instance exported from `config/__init__.py`
 - **Memory Manager**: ChromaDB with 3 collections (memories, chats, my_data) in `core/memory_manager.py`
   - `add_memory()` for long-term facts with categories
   - `recall()` for semantic search of memories
@@ -31,7 +31,7 @@ This file serves as the **working memory** for all coding agents on the Heathcli
 
 ### Configuration Files
 - `.env.example`: Template for all required API keys
-- `config.yaml`: Runtime settings (wake word, TTS config, news sources, LLM params)
+- `config/config.py`: Runtime settings (wake word, TTS config, news sources, LLM params)
 - `requirements.txt`: All dependencies including langchain-google-genai, chromadb, pvporcupine, etc.
 
 ### Project Structure
@@ -91,9 +91,9 @@ heathcliff/
 - Query returns dict with `documents`, `metadatas`, `distances`, `ids` keys
 
 ### Configuration Loading
-- `get_config()` returns singleton instance to avoid re-reading files
-- YAML config accessible via dot notation: `config.get('llm.temperature')`
-- Environment variables override YAML when both present
+- `Config` is a singleton instance to avoid re-reading files
+- Class-based config values are accessed via attributes (example: `config.TEMPERATURE`)
+- Environment variables override config defaults at load time
 - Validation with `config.validate()` checks required API keys
 
 ### Audio Processing
@@ -105,6 +105,15 @@ heathcliff/
 ---
 
 ## Recent Agent Activity
+
+- **2025-12-28**: **Mem0 Chroma Config Fix** ✅
+  - Mem0 Chroma config expects `path` (or host/port) for local usage; `persist_directory` fails validation.
+  - Avoid passing a `chromadb.CloudClient` object in Mem0 config; provide `api_key` + `tenant` (+ host/port) instead.
+
+- **2025-12-28**: **Config Attribute Migration Cleanup** ✅
+  - Updated runtime usages to rely on class-based config attributes instead of `config.get`.
+  - Simplified middleware to a no-op stack for the new config layout.
+  - Aligned audio, greetings, Langfuse, settings UI, and test mocks with attribute access.
 
 - **2025-12-15**: **LangChain Agent Refactoring - Phase 1 Complete** ✅
   - **Goal**: Migrate from custom LangGraph StateGraph to modern LangChain native agent framework
@@ -126,6 +135,102 @@ heathcliff/
     - Ready for Phase 2: Human-in-the-loop callback integration
   - **Next**: Phase 2 - Implement StreamlitApprovalHandler for human approval on sensitive operations
 
+- **2025-12-15**: **Human-in-the-Loop Approval System - Phase 2 Complete** ✅
+  - **Goal**: Implement generalized approval system for sensitive operations using LangChain callbacks
+  - **Key Discovery**: `langchain_community.callbacks.human.HumanApprovalCallbackHandler` provides `on_tool_start` hook for intercepting tool execution
+  - **Changes Made**:
+    - Created `core/approval_handler.py` (~200 lines):
+      - `StreamlitApprovalHandler` extends `HumanApprovalCallbackHandler`
+      - Defines `SENSITIVE_TOOLS` set (send_email, create_event, cancel_event, send_to_telegram, etc.)
+      - Integrates with Streamlit session state for approval workflow
+      - Provides helper functions: `is_approval_pending()`, `approve_request()`, `reject_request()`, `clear_approval()`
+    - Updated `core/agent_core.py`:
+      - Added `additional_callbacks` parameter to both `invoke()` and `stream_invoke()`
+      - Merged callbacks (Langfuse + approval handler) before graph execution
+      - Pass callbacks via `config={"callbacks": all_callbacks}` to graph
+    - Updated `ui/Home.py`:
+      - Added approval UI with Approve/Modify/Reject buttons
+      - Instantiates `StreamlitApprovalHandler(st.session_state)` and passes to agent
+      - Shows tool details (name, args) before execution
+      - Supports inline modification of tool arguments
+    - Updated `tools/gmail_tools.py`:
+      - Changed from `GmailCreateDraft` to `GmailSendMessage` (actually sends email)
+      - Simplified docstring - callback handles approval, not drafts
+      - Reduced safety instructions from ~24 lines to ~5 lines
+    - Updated `instructions/prompts.py`:
+      - Removed "🚨 CRITICAL EMAIL RULES" section (~24 lines)
+      - Simplified to "⚠️ EMAIL SAFETY" (~5 lines)
+      - Updated send_email description: "Creates draft email (user sends manually)" → "Sends email (requires user approval)"
+  - **Testing**: Test script passed - agent invoke/stream working correctly with callback architecture
+  - **Benefits**:
+    - Generalized approval works for ANY tool, not just Gmail
+    - User can approve, modify args, or reject in-app
+    - Centralized approval logic - no per-tool workarounds
+    - Cleaner prompts - callback handles approval workflow
+    - Significantly reduced custom safety code
+  - **Next**: Phase 2.5 - Test email approval workflow end-to-end in Streamlit UI with real Gmail sending
+
+- **2025-12-15**: **Middleware Framework & Critical Bug Fix** ✅
+  - **Goal**: Add execution control middleware (tool selector, rate limiting, summarization) and fix response extraction bug
+  - **Key Discovery**: LangChain middleware (designed for deprecated AgentExecutor) are NOT compatible with create_agent's LangGraph architecture
+  - **Changes Made**:
+    - Created `core/middleware.py` (~230 lines):
+      - `create_middleware_stack()` function with 6 middleware types
+      - LLMToolSelectorMiddleware - intelligently filter tools before model call
+      - ModelCallLimitMiddleware - prevent infinite loops (run_limit, thread_limit)
+      - ToolCallLimitMiddleware - control tool execution with per-tool limits
+      - ToolRetryMiddleware - exponential backoff for transient failures
+      - SummarizationMiddleware - manage conversation history when approaching token limits
+      - ModerationMiddleware - placeholder for custom content filtering
+    - Updated `config/config.py`:
+      - Added comprehensive middleware configuration section (lines 130-182)
+      - Documented all settings with inline comments
+      - Set all middleware `enabled: false` with NOTE explaining LangGraph incompatibility
+    - Fixed type error in `core/agent_core.py`:
+      - Changed `_build_agent()` to pass `model=self.llm` instead of `self.llm_with_tools`
+      - create_agent expects BaseChatModel, not Runnable with bound tools
+    - **CRITICAL BUG FIX**: Fixed response extraction in `stream_invoke()` (line 497-499):
+      - **Bug**: Condition `if last_msg.type == "ai" and not hasattr(last_msg, "tool_calls")` failed when AI messages had empty tool_calls list
+      - **Symptom**: LangGraph execution successful but UI showed "I encountered an error processing your request"
+      - **Fix**: Changed condition to `if last_msg.type == "ai" and (not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls)`
+      - Now correctly extracts AI responses with empty or missing tool_calls attribute
+      - Added debug logging: `logger.debug(f"Stream chunk - msg type: {last_msg.type}, has tool_calls: {hasattr(last_msg, 'tool_calls')}, tool_calls value: {getattr(last_msg, 'tool_calls', None)}")`
+  - **Middleware Incompatibility Details**:
+    - LangChain middleware objects lack required callback interface attributes (raise_error, ignore_chain)
+    - LangGraph callback manager expects different interface than AgentExecutor
+    - Error: `AttributeError: 'LLMToolSelectorMiddleware' object has no attribute 'raise_error'`
+    - Solution: Disabled all middleware in config/config.py until LangGraph-compatible integration method found
+  - **Testing**: Agent working correctly after bug fix - responses now properly extracted and displayed
+  - **Benefits**:
+    - Middleware framework ready for future integration (when LangGraph compatibility available)
+    - Response extraction bug fixed - UI now displays agent responses correctly
+    - Comprehensive middleware configuration documented in config/config.py
+  - **Next**: Test response extraction fix in Streamlit UI, then proceed with Phase 2.5 email approval testing
+
+- **2025-12-15**: **Critical Tool Selection Fix** ✅
+  - **Issue**: Agent was picking tools for previous queries instead of current query
+  - **Root Cause Analysis**:
+    - Agent was receiving 5 recent chat messages (`n=5` in `get_recent_chats()`)
+    - This created cumulative context where old queries influenced tool selection
+    - Example: User asks "list company names" but agent still saw "play song" context
+    - Debug logs showed agent confused by multiple queries in history
+  - **Changes Made** in [core/agent_core.py](core/agent_core.py):
+    1. **Reduced Context Window** (lines 282-286, 422-426):
+       - Changed from `n=5` to `n=2` in both `invoke()` and `stream_invoke()` methods
+       - Only retrieves last 1 turn (user query + assistant response)
+       - Prevents context bleed between unrelated queries
+    2. **Added Focus Instruction** (lines 244-253):
+       - Added system message in `_format_chat_history()` after context messages
+       - Explicitly tells agent: "Focus ONLY on the user's CURRENT query"
+       - Instructs agent to NOT use tools based on previous queries
+  - **Testing**: Restarted Streamlit at 16:47 to apply changes
+  - **Expected Result**: Agent should now correctly select tools for current query only
+  - **Trade-offs**:
+    - Reduced context window (n=2) means less conversation history available
+    - May lose some long-term context benefits
+    - Could implement conversation summarization later if needed
+  - **Next**: User should test with multi-turn conversations to verify fix works
+
 - **2025-12-13**: **Phase 1 Foundation Complete** (3/3 tasks)
   - Implemented project structure and config management system
   - Created ChromaDB memory manager with 3 collections
@@ -134,10 +239,10 @@ heathcliff/
   - Updated CLAUDE.md with Gemini integration, task tracking, code org standards
   - Created comprehensive TODO.md with all project tasks
   - Files created:
-    - `config/config_loader.py` - centralized configuration
+    - `config/config.py` / `config/__init__.py` - centralized configuration
     - `core/memory_manager.py` - ChromaDB integration
     - `core/audio_handler.py` - voice I/O pipeline
-    - `.env.example`, `config.yaml` - configuration templates
+    - `.env.example`, `config/config.py` - configuration templates
     - Updated `requirements.txt` with all dependencies
   - Ready for Phase 2: Gemini Agent Core with LangGraph
 
@@ -171,7 +276,7 @@ heathcliff/
   - Introduced `utils/langfuse_client.py` to centralize Langfuse client + callback creation and safe logging helpers.
   - HeathcliffAgent now registers the Langfuse LangChain callback handler, streams LangGraph executions with `graph.invoke(..., callbacks=...)`, and reports tool events + final responses through Langfuse traces/events.
   - Added configuration knobs (`observability.langfuse.*`) plus `.env` entries (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, etc.) and documented setup in README/SETUP.
-  - Requirements now include `langfuse==2.28.1`; remember to add keys or disable observability via `config.yaml` if running without Langfuse.
+  - Requirements now include `langfuse==2.28.1`; remember to add keys or disable observability via `config/config.py` if running without Langfuse.
 
 - **2025-12-13**: **Phase 4 UI & Integration Complete** (3/3 tasks)
   - Created `main.py` - Main orchestrator with voice mode and text mode
@@ -207,3 +312,19 @@ heathcliff/
 - Error recovery testing
 - Documentation finalization
 - Optional: Docker containerization, systemd service setup
+
+---
+
+## Recent Agent Activity (Cont.)
+
+- **2025-12-28**: **Mem0 Migration Planning** 📝
+  - Goal: Replace custom memory extraction with Mem0 OSS using Gemini + Chroma Cloud.
+  - Decision: Single-user deployment; no per-user isolation needed.
+  - Decision: OK to use Mem0 SQLite history as ephemeral (reset on redeploy).
+  - Preference: Use REST server if simplest; disable `/docs` if possible.
+
+- **2025-12-28**: **Mem0 REST Implementation (In-Repo)** ✅
+  - Replaced REST server with Mem0 SDK in-process.
+  - Configured Gemini LLM + Gemini embeddings + Chroma Cloud via `config/config.py`.
+  - Heathcliff now uses Mem0 SDK for memory add/search while chat/docs stay in Chroma Cloud.
+  - Dockerfile + docker-compose now run `heathcliff` only.

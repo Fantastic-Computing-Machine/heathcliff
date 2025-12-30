@@ -1,20 +1,27 @@
 from typing import Any, List
 
-from langchain_community.tools.calendar import (
-    GoogleCalendarCreateTool,
-    GoogleCalendarDeleteTool,
-    GoogleCalendarGetTool,
-    GoogleCalendarUpdateTool,
+from googleapiclient.discovery import build
+from langchain_google_community import (
+    CalendarCreateEvent,
+    CalendarDeleteEvent,
+    CalendarSearchEvents,
+    CalendarUpdateEvent,
 )
+from utils.google_auth import get_google_credentials, CALENDAR_SCOPES
 
+def _get_calendar_service():
+    """Get authenticated Calendar API service."""
+    creds = get_google_credentials(CALENDAR_SCOPES)
+    return build("calendar", "v3", credentials=creds)
 
 class CalendarTools:
     def __init__(self):
         # Initialize tools with account configurations (if required)
-        self.create_event_tool = GoogleCalendarCreateTool()
-        self.get_date_events_tool = GoogleCalendarGetTool()
-        self.update_event_tool = GoogleCalendarUpdateTool()
-        self.cancel_event_tool = GoogleCalendarDeleteTool()
+        self.service = _get_calendar_service()
+        self.create_event_tool = CalendarCreateEvent(api_resource=self.service)
+        self.get_date_events_tool = CalendarSearchEvents(api_resource=self.service)
+        self.update_event_tool = CalendarUpdateEvent(api_resource=self.service)
+        self.cancel_event_tool = CalendarDeleteEvent(api_resource=self.service)
 
     def create_event(
         self,

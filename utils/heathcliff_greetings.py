@@ -5,7 +5,7 @@ import random
 from datetime import datetime
 from typing import Optional
 
-from config import get_config
+from config import Config
 from logger import logger
 
 
@@ -36,16 +36,15 @@ def get_weather_description(location: Optional[str] = None) -> Optional[str]:
     try:
         import requests
 
-        config = get_config()
-        api_key = config.openweathermap_key
+        api_key = Config.OPENWEATHERMAP_API_KEY
 
         if not api_key:
             return None
 
         if location is None:
-            location = config.get("weather.default_city", "London")
+            location = Config.DEFAULT_CITY or "New York City"
 
-        units = config.get("weather.units", "metric")
+        units = Config.UNITS or "metric"
         url = "http://api.openweathermap.org/data/2.5/weather"
         params = {"q": location, "appid": api_key, "units": units}
 

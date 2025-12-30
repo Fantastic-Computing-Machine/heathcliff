@@ -9,8 +9,8 @@
 ### Task 1: Project Setup & Config Manager
 - [x] Create project structure (`jarvis/` directories)
 - [x] Create `.env.example` with all API key placeholders
-- [x] Create `config.yaml` with default settings
-- [x] Implement `config/config_loader.py`
+- [x] Create `config/config.py` with default settings
+- [x] Implement config singleton in `config/__init__.py`
 - [x] Generate `requirements.txt`
 - [x] Test config loading from both env and yaml
 
@@ -137,7 +137,7 @@
 ### Documentation
 - [ ] Write README.md with setup instructions
 - [ ] Document all API key requirements
-- [ ] Document config.yaml options
+- [ ] Document config/config.py options
 - [ ] Add usage examples
 - [ ] Create troubleshooting guide
 

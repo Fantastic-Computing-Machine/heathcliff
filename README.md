@@ -157,11 +157,11 @@ Access at `http://localhost:8501`
 
 ```python
 from core import MemoryManager, HeathcliffAgent
-from config.config_loader import get_config
+from config import Config
 
 # Initialize components
-config = get_config()
-memory = MemoryManager(persist_dir="./chroma_db")
+config = Config
+memory = MemoryManager(config=config)
 agent = HeathcliffAgent(config=config, memory_manager=memory)
 
 # Single turn conversation
@@ -217,12 +217,13 @@ Heathcliff now ships with first-class Langfuse instrumentation:
 4. Each external tool invocation is logged as a Langfuse event, so you can inspect failures and latency directly in the Langfuse UI.
 
 **Troubleshooting tips**
+
 - If no traces appear, run `python -m utils.langfuse_client` or start Heathcliff with `LOG_LEVEL=DEBUG` to confirm the Langfuse callback is registering.
-- Double-check the Langfuse dashboard filters (environment/project) match the `observability.langfuse.environment` value in `config.yaml`.
+- Double-check the Langfuse dashboard filters (environment/project) match the `observability.langfuse.environment` value in `config/config.py`.
 - Serverless/text-only sessions may exit before the SDK flushes; add `LANGFUSE_DISABLE_BACKGROUND_FLUSH=false` or keep the process alive for a few seconds.
 - The Langfuse callback handler automatically reads keys from environment variables. Passing `public_key`/`secret_key` directly will fail on newer Langfuse releases, so be sure the env vars are loaded before the process starts.
 
-Disable observability anytime by setting `observability.langfuse.enabled` to `false` in `config.yaml`.
+Disable observability anytime by setting `observability.langfuse.enabled` to `false` in `config/config.py`.
 
 Say "Heathcliff" to activate, then give your command.
 
@@ -252,7 +253,8 @@ heathcliff/
 │   ├── agent_core.py        # LangGraph agent orchestrator
 │   └── audio_handler.py     # Voice I/O (wake word, STT, TTS)
 ├── config/
-│   └── config_loader.py     # Configuration management
+│   ├── config.py            # Configuration classes
+│   └── __init__.py          # Config singleton
 ├── tools/                   # Tool integrations
 │   ├── email_tool.py        # Gmail integration
 │   ├── calendar_tool.py     # Google Calendar
@@ -272,7 +274,7 @@ heathcliff/
 │   ├── TODO.md
 │   └── EXECUTION.md
 ├── .env.example             # API key template
-├── config.yaml              # Runtime configuration
+├── config/config.py         # Runtime configuration
 ├── requirements.txt         # Python dependencies
 ├── SETUP.md                 # Detailed setup guide
 └── README.md

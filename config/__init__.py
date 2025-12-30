@@ -1,6 +1,8 @@
 # ABOUTME: Config package initialization
-# ABOUTME: Exports Config class and get_config function
+# ABOUTME: Exports Conf class and singleton Config instance
 
-from .config_loader import Config, get_config
+from config.config import Conf
 
-__all__ = ["Config", "get_config"]
+Config = Conf()
+
+__all__ = ["Config", "Conf"]

@@ -1,22 +1,23 @@
 # ABOUTME: Streamlit multipage app - Memories management page
 # ABOUTME: View, search, and add long-term memories
 
-import streamlit as st
-import sys
 import os
+import sys
+
+import streamlit as st
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from config import get_config
+from config import Config
 from core.memory_manager import MemoryManager
-
 
 st.set_page_config(page_title="Memories", page_icon="🧠", layout="wide")
 
 # Initialize memory
 @st.cache_resource
 def get_memory():
+    config = Config
     return MemoryManager()
 
 
@@ -68,12 +69,14 @@ with col1:
 
         # Show all memories button
         if st.button("📋 Show All Memories"):
-            all_memories = memory.memories.get(limit=100)
+            all_memories = memory.recall("", n=100)
 
-            if all_memories and all_memories.get('documents'):
-                st.write(f"**Total memories**: {len(all_memories['documents'])}")
+            if all_memories and all_memories.get("documents"):
+                docs = all_memories["documents"][0]
+                metas = all_memories["metadatas"][0] if all_memories.get("metadatas") else []
+                st.write(f"**Total memories**: {len(docs)}")
 
-                for doc, meta in zip(all_memories['documents'], all_memories['metadatas']):
+                for doc, meta in zip(docs, metas):
                     with st.expander(f"📝 {doc[:60]}..."):
                         st.write(doc)
                         st.caption(f"Category: {meta.get('category', 'general')}")
@@ -116,7 +119,7 @@ with col2:
         st.metric("Total Memories", stats['memories'])
 
         # Category breakdown
-        all_mems = memory.memories.get(limit=1000)
+        all_mems = memory.memories.get(limit=300)
         if all_mems and all_mems.get('metadatas'):
             categories = {}
             for meta in all_mems['metadatas']:

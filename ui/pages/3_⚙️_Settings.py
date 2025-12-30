@@ -1,20 +1,18 @@
 # ABOUTME: Streamlit multipage app - Settings and configuration page
 # ABOUTME: View system configuration and API status
 
-import streamlit as st
-import sys
 import os
+import sys
+
+import streamlit as st
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from config import get_config
-
+from config import Config
 
 st.set_page_config(page_title="Settings", page_icon="⚙️", layout="wide")
 
-# Initialize config
-config = get_config()
 
 # Header
 st.title("⚙️ Configuration & Settings")
@@ -30,34 +28,60 @@ with tab1:
     # Check API keys
     api_checks = {
         "Gemini API": {
-            "configured": bool(config.gemini_key),
-            "key_preview": f"{config.gemini_key[:10]}..." if config.gemini_key else "Not configured",
-            "docs": "https://makersuite.google.com/app/apikey"
+            "configured": bool(Config.GEMINI_API_KEY),
+            "key_preview": (
+                f"{Config.GEMINI_API_KEY[:10]}..."
+                if Config.GEMINI_API_KEY
+                else "Not configured"
+            ),
+            "docs": "https://makersuite.google.com/app/apikey",
         },
         "Google OAuth (Gmail/Calendar/Drive)": {
-            "configured": bool(config.google_credentials),
-            "key_preview": config.google_credentials if config.google_credentials else "Not configured",
-            "docs": "https://console.cloud.google.com/"
+            "configured": bool(Config.GOOGLE_APPLICATION_CREDENTIALS),
+            "key_preview": (
+                Config.GOOGLE_APPLICATION_CREDENTIALS
+                if Config.GOOGLE_APPLICATION_CREDENTIALS
+                else "Not configured"
+            ),
+            "docs": "https://console.cloud.google.com/",
         },
         "OpenWeatherMap": {
-            "configured": bool(config.openweathermap_key),
-            "key_preview": f"{config.openweathermap_key[:10]}..." if config.openweathermap_key else "Not configured",
-            "docs": "https://openweathermap.org/api"
+            "configured": bool(Config.OPENWEATHERMAP_API_KEY),
+            "key_preview": (
+                f"{Config.OPENWEATHERMAP_API_KEY[:10]}..."
+                if Config.OPENWEATHERMAP_API_KEY
+                else "Not configured"
+            ),
+            "docs": "https://openweathermap.org/api",
         },
         "NewsAPI": {
-            "configured": bool(config.newsapi_key),
-            "key_preview": f"{config.newsapi_key[:10]}..." if config.newsapi_key else "Not configured",
-            "docs": "https://newsapi.org/"
+            "configured": bool(Config.NEWS_API_KEY),
+            "key_preview": (
+                f"{Config.NEWS_API_KEY[:10]}..."
+                if Config.NEWS_API_KEY
+                else "Not configured"
+            ),
+            "docs": "https://newsapi.org/",
         },
         "Spotify Client": {
-            "configured": bool(config.spotify_client_id and config.spotify_client_secret),
-            "key_preview": f"{config.spotify_client_id[:10]}..." if config.spotify_client_id else "Not configured",
-            "docs": "https://developer.spotify.com/dashboard"
+            "configured": bool(
+                Config.SPOTIFY_CLIENT_ID and Config.SPOTIFY_CLIENT_SECRET
+            ),
+            "key_preview": (
+                f"{Config.SPOTIFY_CLIENT_ID[:10]}..."
+                if Config.SPOTIFY_CLIENT_ID
+                else "Not configured"
+            ),
+            "docs": "https://developer.spotify.com/dashboard",
         },
         "Telegram Bot": {
-            "configured": bool(config.telegram_token),
-            "key_preview": f"{config.telegram_token[:10]}..." if config.telegram_token else "Not configured",
-            "docs": "https://t.me/botfather"
+            "configured": bool(Config.TELEGRAM_BOT_TOKEN),
+            "key_preview": (
+                f"{Config.TELEGRAM_BOT_TOKEN[:10]}..."
+                if Config.TELEGRAM_BOT_TOKEN
+                else "Not configured"
+            ),
+            "docs": "https://t.me/botfather",
         },
     }
 
@@ -88,26 +112,32 @@ with tab2:
 
     with col1:
         st.markdown("**Wake Word**")
-        wake_word = config.get('wake_word', 'heathcliff')
+        wake_word = Config.WAKE_WORD
         st.code(wake_word, language=None)
         st.caption("The word used to activate voice mode")
 
         st.markdown("**Audio Processing**")
-        st.code(f"""
-Sample Rate: {config.get('audio.sample_rate', 16000)} Hz
-Chunk Size: {config.get('audio.chunk_size', 512)} samples
-        """, language=None)
+        st.code(
+            f"""
+Sample Rate: {Config.SAMPLE_RATE} Hz
+Chunk Size: {Config.CHUNK_SIZE} samples
+        """,
+            language=None,
+        )
 
     with col2:
         st.markdown("**Text-to-Speech**")
-        st.code(f"""
-Rate: {config.get('tts.rate', 175)} words/minute
-Volume: {config.get('tts.volume', 0.9)}
-Voice: {config.get('tts.voice', 'default')}
-        """, language=None)
+        st.code(
+            f"""
+Rate: {Config.TTS_RATE} words/minute
+Volume: {Config.TTS_VOLUME}
+Voice: {Config.TTS_VOICE or 'default'}
+        """,
+            language=None,
+        )
 
     st.markdown("---")
-    st.info("💡 **Tip**: Edit `config.yaml` to change audio settings")
+    st.info("💡 **Tip**: Edit `config/Config.py` to change audio settings")
 
 # Tab 3: LLM Settings
 with tab3:
@@ -117,26 +147,35 @@ with tab3:
 
     with col1:
         st.markdown("**Model**")
-        model = config.get('llm.model', 'gemini-2.0-flash-exp')
+        model = Config.MODEL
         st.code(model, language=None)
 
         st.markdown("**Parameters**")
-        st.code(f"""
-Temperature: {config.get('llm.temperature', 0.7)}
-Max Tokens: {config.get('llm.max_tokens', 1024)}
-        """, language=None)
+        st.code(
+            f"""
+Temperature: {Config.TEMPERATURE}
+Max Tokens: {Config.MAX_TOKENS}
+        """,
+            language=None,
+        )
 
     with col2:
         st.markdown("**Memory Settings**")
-        st.code(f"""
-Chat Context: {config.get('memory.max_chat_context', 10)} messages
-Long-term Memories: {config.get('memory.max_memories', 5)} items
-        """, language=None)
+        st.code(
+            f"""
+Chat Context: {Config.MEMORY_CHAT_CONTEXT} messages
+Long-term Memories: {Config.MEMORY_MAX_MEMORIES} items
+        """,
+            language=None,
+        )
 
         st.markdown("**Session**")
-        st.code(f"""
-Timeout: {config.get('session.timeout_seconds', 300)} seconds
-        """, language=None)
+        st.code(
+            f"""
+Timeout: {Config.TIMEOUT_SECONDS} seconds
+        """,
+            language=None,
+        )
 
     st.markdown("---")
     st.info("💡 **Tip**: Higher temperature = more creative, Lower = more focused")
@@ -145,7 +184,7 @@ Timeout: {config.get('session.timeout_seconds', 300)} seconds
 with tab4:
     st.subheader("ChromaDB Configuration")
 
-    persist_dir = config.get('chroma.persist_directory', './chroma_db')
+    persist_dir = Config.CHROMA_PERSIST_DIRECTORY
 
     col1, col2 = st.columns(2)
 
@@ -196,4 +235,4 @@ with tab4:
 
 # Footer
 st.markdown("---")
-st.caption("⚙️ All settings are loaded from `.env` and `config.yaml` files")
+st.caption("⚙️ All settings are loaded from `.env` and `config/Config.py` files")

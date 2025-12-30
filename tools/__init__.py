@@ -7,28 +7,6 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 from config import get_config
 from logger import logger
 
-__all__ = [
-    # Spotify tools
-    "play_track",
-    "pause_playback",
-    "current_track",
-    "get_spotify_tools",
-    # Info tools
-    "get_weather",
-    "get_news",
-    "search_web",
-    "wikipedia_search",
-    "get_info_tools",
-    # Communication tools
-    "send_to_telegram",
-    "read_gdrive_file",
-    "get_comm_tools",
-    # People tools
-    "search_contacts",
-    "get_people_tools",
-    # Aggregator
-    "get_all_tools",
-]
 
 _TOOL_EXPORTS: Dict[str, Tuple[str, str]] = {
     # Spotify tools
@@ -53,7 +31,10 @@ _TOOL_EXPORTS: Dict[str, Tuple[str, str]] = {
 
 _INTERNAL_EXPORTS = {
     "get_gmail_toolkit_tools": ("tools.gmail_tools", "get_gmail_toolkit_tools"),
-    "get_calendar_toolkit_tools": ("tools.calendar_tools", "get_calendar_toolkit_tools"),
+    "get_calendar_toolkit_tools": (
+        "tools.calendar_tools",
+        "get_calendar_toolkit_tools",
+    ),
 }
 
 
@@ -161,3 +142,27 @@ def get_all_tools(prefer_langchain_toolkits: bool | None = None) -> List[Any]:
         logger.warning("No tools registered; returning empty list")
 
     return merged
+
+
+__all__ = [
+    # Spotify tools
+    "play_track",
+    "pause_playback",
+    "current_track",
+    "get_spotify_tools",
+    # Info tools
+    "get_weather",
+    "get_news",
+    "search_web",
+    "wikipedia_search",
+    "get_info_tools",
+    # Communication tools
+    "send_to_telegram",
+    "read_gdrive_file",
+    "get_comm_tools",
+    # People tools
+    "search_contacts",
+    "get_people_tools",
+    # Aggregator
+    "get_all_tools",
+]

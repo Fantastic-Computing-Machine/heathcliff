@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Fix Hugging Face tokenizers parallelism warning when using forked processes
+# Must be set before tokenizers are initialized
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 # Get logger
 logger = getLogger("heathcliff")
 

@@ -144,7 +144,7 @@ https://www.googleapis.com/auth/drive.readonly
 2. Generate a **Public key** and **Secret key** via **Project Settings → API Keys**.
 3. Copy the base URL for your region (EU: `https://cloud.langfuse.com`, US: `https://us.cloud.langfuse.com`, custom if self-hosting).
 4. Set `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, optional `LANGFUSE_HOST`/`LANGFUSE_RELEASE` inside `.env`.
-5. Run Heathcliff and inspect real-time traces, prompts, and tool usage inside Langfuse. Use `python -m utils.langfuse_client` to verify credentials if nothing appears. Traces default to `user_id=adiagarwal`; update `observability.langfuse.user_id` in `config.yaml` if you want a different alias.
+5. Run Heathcliff and inspect real-time traces, prompts, and tool usage inside Langfuse. Use `python -m utils.langfuse_client` to verify credentials if nothing appears. Traces default to `user_id=adiagarwal`; update `observability.langfuse.user_id` in `config/config.py` if you want a different alias.
 6. The Langfuse LangChain callback reads credentials from environment variables—do not pass them directly into the handler, otherwise new SDK versions throw `unexpected keyword argument 'secret_key'`.
 
 ---
@@ -191,7 +191,7 @@ LANGFUSE_RELEASE=local-dev
 
 ### 2. Configuration File
 
-Edit `config.yaml` to customize settings:
+Edit `config/config.py` to customize settings:
 
 ```yaml
 # Wake word (must be supported by Porcupine)
@@ -281,18 +281,18 @@ Access at `http://localhost:8501`
 ### 1. Test Configuration
 
 ```python
-from config import get_config
+from config import Config
 
-config = get_config()
-print(config.validate())  # Should print True
+Config.validate()
 ```
 
 ### 2. Test Memory
 
 ```python
 from core.memory_manager import MemoryManager
+from config import Config
 
-memory = MemoryManager()
+memory = MemoryManager(config=Config)
 memory_id = memory.add_memory("Test memory", category="test")
 results = memory.recall("test")
 print(results)
@@ -379,7 +379,7 @@ Adjust device index in `core/audio_handler.py` if needed.
 
 1. **Add Memories**: Use the Streamlit dashboard to add facts about yourself
 2. **Test Tools**: Try different commands to test each integration
-3. **Customize**: Modify `config.yaml` for your preferences
+3. **Customize**: Modify `config/config.py` for your preferences
 4. **Extend**: Add custom tools in `tools/` directory
 
 ---
@@ -406,7 +406,7 @@ Adjust device index in `core/audio_handler.py` if needed.
 
 1. **First Run**: Initial model downloads may take time
 2. **Memory**: ChromaDB builds embeddings on first use
-3. **Audio**: Adjust chunk size in `config.yaml` for latency/quality trade-off
+3. **Audio**: Adjust chunk size in `config/config.py` for latency/quality trade-off
 4. **Rate Limits**: Be mindful of API quotas in production use
 
 Enjoy using Heathcliff! 🎤

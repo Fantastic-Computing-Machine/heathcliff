@@ -171,3 +171,4 @@ cython_debug/
 chroma_db/*
 credentials.json
 token.json
+uv.lock
