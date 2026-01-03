@@ -3,13 +3,59 @@
 
 import uuid
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import chromadb
+from chromadb.api import ClientAPI
 from mem0 import Memory
+
+from config import Config
 from logger import logger
 from utils.errors import AgentMemoryError
-from config import Config
+from utils.retry import retry
+
+CHROMA_CLIENT = Union[ClientAPI, None]
+
+_global_chroma_client: CHROMA_CLIENT = None
+
+
+@retry(
+    max_retries=3,
+    error_message="ChromaDB client initialization failed",
+    exponential_backoff=True,
+)
+def chroma_client(
+    host: str, port: int, api_key: str, tenant: str, db_name: str
+) -> None:
+    """Initialize global ChromaDB client."""
+
+    global _global_chroma_client
+
+    if _global_chroma_client is not None:
+        return
+
+    if not (host and port and api_key and tenant and db_name):
+        raise AgentMemoryError(
+            "Memory not found: remote Chroma requires CHROMA_API_KEY, CHROMA_TENANT, CHROMA_DATABASE.",
+            exec,
+        )
+
+    try:
+        if Config.USE_REMOTE_CHROMA:
+            _global_chroma_client = chromadb.CloudClient(
+                api_key=api_key, tenant=tenant, database=db_name, cloud_host=host
+            )
+            logger.info("Using ChromaDB Cloud client for memory storage")
+        else:
+            _global_chroma_client = chromadb.PersistentClient(
+                path=Config.CHROMA_PERSIST_DIRECTORY
+            )
+    except Exception as exc:
+        logger.warning(f"ChromaDB Cloud client initialization failed: {exc}")
+        raise AgentMemoryError(
+            "Memory not found: ChromaDB Cloud client failed to initialize.",
+            exec,
+        ) from exc
 
 
 class _Mem0CollectionAdapter:
@@ -22,6 +68,7 @@ class _Mem0CollectionAdapter:
 
     def get(self, limit: int = 100) -> Dict[str, List[Any]]:
         if limit > 300:
+            logger.warning("Mem0 get() limit capped at 300")
             limit = 300
         try:
             result = self._client.get_all(
@@ -64,25 +111,24 @@ class MemoryManager:
     """
 
     _mem0_singleton: Optional[Memory] = None
-    _chroma_client: Optional[Any] = None
 
-    def __init__(
-        self,
-    ):
-        """
-        Initialize ChromaDB client and create/load collections.
+    def __init__(self) -> None:
+        """Initialize ChromaDB client and create/load collections."""
 
-        Args:
-            client: Optional pre-configured ChromaDB client
-            config: Config instance for runtime settings
-        """
+        chroma_client(
+            host=Config.CHROMA_HOST,
+            port=Config.CHROMA_PORT,
+            api_key=Config.CHROMA_API_KEY,
+            tenant=Config.CHROMA_TENANT,
+            db_name=Config.CHROMA_DATABASE,
+        )
 
-        self.client = self._build_client()
+        self.client: CHROMA_CLIENT = _global_chroma_client
 
         self.mem0_user_id = Config.USER_ID
         self.mem0_agent_id = Config.MEM0_AGENT_ID
-        self.mem0_config = Config.CONFIG
-        self.mem0_client = self._get_mem0_client()
+        self.mem0_config = Config.MEM0_CONFIG
+        self.mem0_client = self._get_mem0_client(self.client)
 
         if not self.mem0_client:
             raise AgentMemoryError(
@@ -101,51 +147,40 @@ class MemoryManager:
             metadata={"description": "Indexed user documents and emails"},
         )
 
-    def _get_mem0_client(self) -> Memory:
-        if MemoryManager._mem0_singleton is not None:
-            return MemoryManager._mem0_singleton
+    def _get_mem0_client(self, client: CHROMA_CLIENT) -> Memory:
+        """Initialize or return singleton Mem0 client."""
+
+        # TODO: Improve client initialization (consolidate from `chroma_client`), one func that returns chroma client and mem0 client.
+        # This function should also handle both remote and local chroma clients.
+        # This should also handle singleton pattern for both clients.
+
+        if not _global_chroma_client:
+            raise AgentMemoryError(
+                "Memory not found: ChromaDB client is not initialized."
+            )
+
+        from copy import deepcopy
+
+        config = deepcopy(Config.MEM0_CONFIG)
 
         try:
-            MemoryManager._mem0_singleton = Memory.from_config(self.mem0_config)
+            config["vector_store"]["config"] = {
+                "collection_name": Config.MEMORY_COLLECTION,
+                "client": client or _global_chroma_client,
+                "host": Config.CHROMA_HOST,
+                "port": Config.CHROMA_PORT,
+                "path": Config.CHROMA_PERSIST_DIRECTORY,
+            }
+
+            MemoryManager._mem0_singleton = Memory.from_config(config)
+            logger.info("Mem0 client initialized for memory management.")
+
             return MemoryManager._mem0_singleton
         except Exception as exc:
             logger.warning(f"Mem0 SDK initialization failed: {exc}")
             raise AgentMemoryError(
                 "Memory not found: Mem0 client failed to initialize."
             ) from exc
-
-    def _build_client(self) -> Any:
-        """Create a Chroma client (remote if USE_REMOTE else local)."""
-
-        if MemoryManager._chroma_client:
-            return MemoryManager._chroma_client
-
-        if not Config.USE_REMOTE_CHROMA:
-
-            persist_dir = Config.CHROMA_PERSIST_DIRECTORY
-            if not persist_dir:
-                raise AgentMemoryError(
-                    "Memory not found: CHROMA_PERSIST_DIRECTORY must be set for local Chroma."
-                )
-
-            logger.info("Using ChromaDB persistent client for memory storage")
-            return chromadb.PersistentClient(path=persist_dir)
-
-        api_key = Config.CHROMA_API_KEY
-        tenant = Config.CHROMA_TENANT
-        database = Config.CHROMA_DATABASE
-        host = Config.CHROMA_HOST
-
-        if not api_key or not tenant or not database:
-            raise AgentMemoryError(
-                "Memory not found: remote Chroma requires CHROMA_API_KEY, CHROMA_TENANT, CHROMA_DATABASE."
-            )
-
-        logger.info("Using ChromaDB Cloud client for memory storage")
-        MemoryManager._chroma_client = chromadb.CloudClient(
-            api_key=api_key, tenant=tenant, database=database, cloud_host=host
-        )
-        return MemoryManager._chroma_client
 
     def add_memory(
         self,
@@ -190,6 +225,43 @@ class MemoryManager:
 
         return memory_id or f"mem0_{uuid.uuid4()}"
 
+    @staticmethod
+    def _empty_query_results() -> Dict[str, List[List[Any]]]:
+        return {"documents": [[]], "metadatas": [[]], "ids": [[]], "distances": [[]]}
+
+    @staticmethod
+    def _normalize_mem0_results(raw_results: Any) -> Dict[str, List[List[Any]]]:
+        items = (
+            raw_results.get("results", raw_results)
+            if isinstance(raw_results, dict)
+            else raw_results
+        )
+        documents: List[str] = []
+        metadatas: List[Dict[str, Any]] = []
+        ids: List[str] = []
+        distances: List[Optional[float]] = []
+
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                memory_text = (
+                    item.get("memory") or item.get("text") or item.get("content") or ""
+                )
+                documents.append(str(memory_text))
+                metadatas.append(item.get("metadata", {}) or {})
+                ids.append(str(item.get("id") or item.get("memory_id") or ""))
+                distances.append(
+                    item.get("distance") or item.get("score") or item.get("similarity")
+                )
+
+        return {
+            "documents": [documents],
+            "metadatas": [metadatas],
+            "ids": [ids],
+            "distances": [distances],
+        }
+
     def recall(
         self, query: str, n: int = 3, category: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -202,7 +274,7 @@ class MemoryManager:
             category: Optional category filter
 
         Returns:
-            Dictionary containing documents, metadatas, and distances
+            Dictionary containing documents, metadatas, ids, and distances
         """
         filters = {"category": category} if category else None
         try:
@@ -211,32 +283,9 @@ class MemoryManager:
             )
         except Exception as exc:
             logger.warning(f"Mem0 recall failed: {exc}")
-            return {"documents": [[]], "metadatas": [[]], "ids": [[]]}
+            return self._empty_query_results()
 
-        results = result.get("results", result)
-        documents: List[str] = []
-        metadatas: List[Dict[str, Any]] = []
-        ids: List[str] = []
-
-        if isinstance(results, list):
-            for item in results:
-                if not isinstance(item, dict):
-                    continue
-                memory_text = (
-                    item.get("memory") or item.get("text") or item.get("content")
-                )
-                if memory_text:
-                    documents.append(str(memory_text))
-                metadatas.append(item.get("metadata", {}) or {})
-                ids.append(str(item.get("id") or item.get("memory_id") or ""))
-
-        return {"documents": [documents], "metadatas": [metadatas], "ids": [ids]}
-
-        where_filter = {"category": category} if category else None
-        results = self.memories.query(
-            query_texts=[query], n_results=n, where=where_filter
-        )
-        return results
+        return self._normalize_mem0_results(result)
 
     def save_chat(
         self, user_msg: str, assistant_msg: str, session_id: str
@@ -284,16 +333,14 @@ class MemoryManager:
         )
 
         try:
-            messages = [
-                {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": assistant_msg},
-            ]
-            self.mem0_client.add(
-                messages,
-                user_id=self.mem0_user_id,
-                metadata={"session_id": session_id},
-                agent_id=self.mem0_agent_id,
-            )
+            if self._should_extract_memory(user_msg):
+                # Only send user content for extraction to avoid assistant acknowledgements
+                self.mem0_client.add(
+                    [{"role": "user", "content": user_msg}],
+                    user_id=self.mem0_user_id,
+                    metadata={"session_id": session_id},
+                    agent_id=self.mem0_agent_id,
+                )
         except Exception as exc:
             logger.warning(f"Mem0 memory extraction failed: {exc}")
 
@@ -432,10 +479,13 @@ class MemoryManager:
         """
         try:
             if hasattr(self.mem0_client, "delete"):
-                self.mem0_client.delete(memory_id)
+                try:
+                    self.mem0_client.delete(memory_id=memory_id)
+                except TypeError:
+                    self.mem0_client.delete(memory_id)
             return True
         except Exception as e:
-            print(f"Error deleting memory {memory_id}: {e}")
+            logger.warning(f"Error deleting memory {memory_id}: {e}")
             return False
 
     def clear_session(self, session_id: str) -> bool:
@@ -452,7 +502,7 @@ class MemoryManager:
             self.chats.delete(where={"session": session_id})
             return True
         except Exception as e:
-            print(f"Error clearing session {session_id}: {e}")
+            logger.warning(f"Error clearing session {session_id}: {e}")
             return False
 
     def get_stats(self) -> Dict[str, int]:
@@ -472,3 +522,58 @@ class MemoryManager:
         """String representation with stats."""
         stats = self.get_stats()
         return f"<MemoryManager memories={stats['memories']} chats={stats['chats']} docs={stats['documents']}>"
+
+    @staticmethod
+    def _should_extract_memory(user_msg: str) -> bool:
+        """Heuristic gate to reduce noisy memories from questions or commands."""
+        if not user_msg or not user_msg.strip():
+            return False
+
+        text = user_msg.strip().lower()
+        if len(text) < 5:
+            return False
+
+        # Skip obvious questions/commands to avoid tool-related noise.
+        if text.endswith("?"):
+            return False
+        if text.startswith(
+            (
+                "can you",
+                "could you",
+                "please ",
+                "tell me",
+                "find ",
+                "search ",
+                "send ",
+                "email ",
+            )
+        ):
+            return False
+
+        triggers = (
+            "remember",
+            "i like",
+            "i love",
+            "i prefer",
+            "my favorite",
+            "my favourite",
+            "i am ",
+            "i'm ",
+            "my name is",
+            "call me ",
+            "i live",
+            "i work",
+            "my email",
+            "my phone",
+            "my address",
+            "my birthday",
+            "my birthdate",
+            "i have",
+            "i don't",
+            "i do not",
+            "i hate",
+            "my diet",
+            "my allergies",
+            "my timezone",
+        )
+        return any(trigger in text for trigger in triggers)

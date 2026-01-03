@@ -56,7 +56,7 @@ def build_system_prompt(master_info: dict = None) -> str:
     notes_str = "\n- ".join(notes) if notes else "No additional notes"
 
     # Get current date and time
-    tz = pytz.timezone('America/New_York')  # User is in Jersey City, NJ
+    tz = pytz.timezone("America/New_York")  # User is in Jersey City, NJ
     now = datetime.now(tz)
     current_date = now.strftime("%A, %B %d, %Y")  # e.g., "Monday, December 15, 2025"
     current_time = now.strftime("%I:%M %p")  # e.g., "02:30 PM"

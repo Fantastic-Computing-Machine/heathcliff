@@ -3,7 +3,6 @@
 import os
 from typing import Any, Dict, Optional
 
-import chromadb
 from dotenv import load_dotenv
 from logger import logger
 from config.master_info import MASTER_INFO
@@ -19,8 +18,8 @@ class ChromaConf:
 
     USE_REMOTE_CHROMA = os.getenv("USE_REMOTE_CHROMA", "false").lower() == "true"
 
-    CHROMA_API_KEY = os.getenv("CHROMA_API_KEY")
-    CHROMA_TENANT = os.getenv("CHROMA_TENANT")
+    CHROMA_API_KEY = os.getenv("CHROMA_API_KEY", "")
+    CHROMA_TENANT = os.getenv("CHROMA_TENANT", "")
     CHROMA_DATABASE = os.getenv("CHROMA_DATABASE", "heathcliff")
     CHROMA_HOST = os.getenv("CHROMA_HOST", "https://api.trychroma.com")
     CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
@@ -43,6 +42,8 @@ class Mem0Conf:
     MEMORY_CHAT_CONTEXT = 10
     MEMORY_MAX_MEMORIES = 5
 
+    MEMORY_COLLECTION = "heathcliff_memories"
+
     _llm_config: Dict[str, Any] = {
         "provider": "gemini",
         "config": {
@@ -62,7 +63,7 @@ class Mem0Conf:
     _vector_store_config: Dict[str, Any] = {
         "provider": "chroma",
         "config": {
-            "collection_name": "heathcliff_memories",
+            "collection_name": MEMORY_COLLECTION,
             "host": ChromaConf.CHROMA_HOST,
             "port": ChromaConf.CHROMA_PORT,
             "api_key": ChromaConf.CHROMA_API_KEY,
@@ -70,37 +71,7 @@ class Mem0Conf:
         },
     }
 
-    if ChromaConf.USE_REMOTE_CHROMA:
-        _cloud_client = chromadb.CloudClient(
-            cloud_host=ChromaConf.CHROMA_HOST,
-            cloud_port=ChromaConf.CHROMA_PORT,
-            api_key=ChromaConf.CHROMA_API_KEY,
-            tenant=ChromaConf.CHROMA_TENANT,
-            database=ChromaConf.CHROMA_DATABASE,
-        )
-
-        if _cloud_client:
-            _vector_store_config["config"] = {
-                "collection_name": "heathcliff_memories",
-                "client": _cloud_client,
-                "host": ChromaConf.CHROMA_HOST,
-                "port": ChromaConf.CHROMA_PORT,
-            }
-        else:
-            _vector_store_config["config"] = {
-                "collection_name": "heathcliff_memories",
-                "host": ChromaConf.CHROMA_HOST,
-                "port": ChromaConf.CHROMA_PORT,
-                "api_key": ChromaConf.CHROMA_API_KEY,
-                "tenant": ChromaConf.CHROMA_TENANT,
-            }
-    else:
-        _vector_store_config["config"] = {
-            "collection_name": "heathcliff_memories",
-            "path": ChromaConf.CHROMA_PERSIST_DIRECTORY,
-        }
-
-    CONFIG: Dict[str, Any] = {
+    MEM0_CONFIG: Dict[str, Dict] = {
         "llm": _llm_config,
         "embedder": _embedder_config,
         "vector_store": _vector_store_config,
@@ -114,6 +85,7 @@ class PlatformConf:
     GOOGLE_APPLICATION_CREDENTIALS = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"
     )
+    # Google Search
     GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
     GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 

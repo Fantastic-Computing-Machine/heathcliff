@@ -48,10 +48,11 @@ with col1:
         if results and results.get('documents'):
             docs = results['documents'][0]
             metas = results['metadatas'][0]
+            ids = results["ids"][0] if results.get("ids") else []
 
             st.success(f"Found {len(docs)} relevant memories")
 
-            for i, (doc, meta) in enumerate(zip(docs, metas)):
+            for i, (doc, meta, mem_id) in enumerate(zip(docs, metas, ids)):
                 with st.expander(f"📝 {doc[:60]}{'...' if len(doc) > 60 else ''}", expanded=(i == 0)):
                     st.write(doc)
 
@@ -62,6 +63,16 @@ with col1:
                         timestamp = meta.get('timestamp', 'unknown')
                         if timestamp != 'unknown':
                             st.caption(f"**Added**: {timestamp[:10]}")
+                    if mem_id:
+                        if st.button("🗑️ Delete memory", key=f"delete_memory_{mem_id}"):
+                            if memory.delete_memory(mem_id):
+                                st.success("Memory deleted.")
+                                if hasattr(st, "rerun"):
+                                    st.rerun()
+                                else:
+                                    st.rerun()
+                            else:
+                                st.error("Failed to delete memory.")
         else:
             st.info("💡 No memories found matching your search.")
     else:
@@ -69,17 +80,30 @@ with col1:
 
         # Show all memories button
         if st.button("📋 Show All Memories"):
-            all_memories = memory.recall("", n=100)
+            all_memories = memory.memories.get(limit=300)
 
             if all_memories and all_memories.get("documents"):
-                docs = all_memories["documents"][0]
-                metas = all_memories["metadatas"][0] if all_memories.get("metadatas") else []
+                docs = all_memories["documents"]
+                metas = all_memories["metadatas"] if all_memories.get("metadatas") else []
+                ids = all_memories["ids"] if all_memories.get("ids") else []
                 st.write(f"**Total memories**: {len(docs)}")
 
-                for doc, meta in zip(docs, metas):
+                for doc, meta, mem_id in zip(docs, metas, ids):
                     with st.expander(f"📝 {doc[:60]}..."):
                         st.write(doc)
                         st.caption(f"Category: {meta.get('category', 'general')}")
+                        if mem_id:
+                            if st.button(
+                                "🗑️ Delete memory", key=f"delete_memory_all_{mem_id}"
+                            ):
+                                if memory.delete_memory(mem_id):
+                                    st.success("Memory deleted.")
+                                    if hasattr(st, "rerun"):
+                                        st.rerun()
+                                    else:
+                                        st.rerun()
+                                else:
+                                    st.error("Failed to delete memory.")
             else:
                 st.info("No memories stored yet")
 
