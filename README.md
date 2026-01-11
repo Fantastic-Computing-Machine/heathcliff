@@ -16,10 +16,9 @@ cd heathcliff
 # 2. Install system dependencies (Linux/WSL)
 sudo apt install python3-pyaudio portaudio19-dev espeak
 
-# 3. Set up Python environment
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# 3. Set up Python environment with uv
+curl -LsSf https://astral.sh/uv/install.sh | sh  # skip if you already have uv
+uv sync  # creates .venv from pyproject.toml / uv.lock
 
 # 4. Configure API keys
 cp .env.example .env
@@ -28,13 +27,13 @@ cp .env.example .env
 #          + LANGFUSE_BASE_URL (https://cloud.langfuse.com or us.cloud...) for observability
 
 # 5. Run in text mode (no voice hardware needed)
-python main.py --text
+uv run python main.py --text
 
 # OR run in voice mode
-python main.py
+uv run python main.py
 
 # OR launch the Streamlit dashboard
-streamlit run ui/Home.py
+uv run streamlit run ui/Home.py
 ```
 
 **That's it!** For detailed setup including Google OAuth, Spotify, and other integrations, see [SETUP.md](SETUP.md).

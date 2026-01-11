@@ -109,12 +109,12 @@ if "session_id" not in st.session_state:
     logger.info(f"Created new session: {st.session_state.session_id}")
 
 # Display Heathcliff's greeting ONCE at the start of the session
-if not st.session_state.greeting_shown and len(st.session_state.messages) == 0:
-    greeting = generate_greeting(user_name="Adi", include_weather=True)
-    with st.chat_message("assistant"):
-        st.markdown(f"*{greeting}*")
-    st.session_state.greeting_shown = True
-    # Don't add to messages - this is ephemeral greeting
+# if not st.session_state.greeting_shown and len(st.session_state.messages) == 0:
+#     greeting = generate_greeting(user_name="Adi", include_weather=True)
+#     with st.chat_message("assistant"):
+#         st.markdown(f"*{greeting}*")
+#     st.session_state.greeting_shown = True
+#     # Don't add to messages - this is ephemeral greeting
 
 # Display chat messages
 for message in st.session_state.messages:
@@ -137,19 +137,19 @@ if is_approval_pending(st.session_state):
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.button("✅ Approve", key="approve_btn", use_container_width=True):
+            if st.button("✅ Approve", key="approve_btn", width="content"):
                 approve_request(st.session_state)
                 clear_approval(st.session_state)
                 st.success("Tool execution approved!")
                 st.rerun()
 
         with col2:
-            if st.button("✏️ Modify", key="modify_btn", use_container_width=True):
+            if st.button("✏️ Modify", key="modify_btn", width="content"):
                 # Show modification form
                 st.session_state["show_modify_form"] = True
 
         with col3:
-            if st.button("❌ Reject", key="reject_btn", use_container_width=True):
+            if st.button("❌ Reject", key="reject_btn", width="content"):
                 reject_request(st.session_state)
                 clear_approval(st.session_state)
                 st.error("Tool execution rejected!")
@@ -174,7 +174,7 @@ if is_approval_pending(st.session_state):
 
             col_submit, col_cancel = st.columns(2)
             with col_submit:
-                if st.form_submit_button("✅ Submit", use_container_width=True):
+                if st.form_submit_button("✅ Submit", width="content"):
                     approve_request(st.session_state, modified_input=modified_input)
                     clear_approval(st.session_state)
                     st.session_state["show_modify_form"] = False
@@ -182,13 +182,13 @@ if is_approval_pending(st.session_state):
                     st.rerun()
 
             with col_cancel:
-                if st.form_submit_button("❌ Cancel", use_container_width=True):
+                if st.form_submit_button("❌ Cancel", width="content"):
                     st.session_state["show_modify_form"] = False
                     st.rerun()
 
 # Chat input
 if chat_input_message := st.chat_input(
-    "Hi, what's on your mind...",
+    generate_greeting(user_name="Adi", include_weather=True),
     accept_file=True,
     accept_audio=True,
     file_type=["jpg", "jpeg", "png"],
@@ -291,7 +291,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("💬 Chat Controls")
 
-    if st.button("📋 Copy Conversation", use_container_width=True):
+    if st.button("📋 Copy Conversation", width="content"):
         # Format conversation as text
         conversation_text = ""
         for msg in st.session_state.messages:
@@ -305,7 +305,7 @@ with st.sidebar:
         else:
             st.info("No conversation to copy yet")
 
-    if st.button("🗑️ Clear Chat History", use_container_width=True):
+    if st.button("🗑️ Clear Chat History", width="content"):
         st.session_state.messages = []
         st.session_state.greeting_shown = False  # Reset greeting for new session
         # Generate new session_id to clear conversation context
@@ -314,7 +314,7 @@ with st.sidebar:
         st.session_state.session_id = str(uuid.uuid4())
         st.rerun()
 
-    if st.button("🔄 New Session", use_container_width=True):
+    if st.button("🔄 New Session", width="content"):
         # Create new session
         st.session_state.messages = []
         st.session_state.greeting_shown = False  # Reset greeting for new session
@@ -326,15 +326,8 @@ with st.sidebar:
         st.success("New session started!")
         st.rerun()
 
-    if st.button("♻️ Reload Agent", use_container_width=True):
+    if st.button("♻️ Reload Agent", width="content"):
         # Clear cache and reload agent
         st.cache_resource.clear()
         st.success("Agent reloaded!")
         st.rerun()
-
-
-# Footer
-st.markdown("---")
-st.caption(
-    "💡 **Tip**: Use the sidebar to navigate to Memories, Analytics, and Settings pages"
-)

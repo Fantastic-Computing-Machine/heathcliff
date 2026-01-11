@@ -20,7 +20,7 @@ def build_system_prompt(master_info: dict = None) -> str:
         master_info = {
             "name": "Sir",
             "full_name": "Master",
-            "location": "London",
+            "location": "New York City",
             "interests": [],
             "favorite_artists": [],
             "notes": [],
@@ -28,7 +28,7 @@ def build_system_prompt(master_info: dict = None) -> str:
 
     name = master_info.get("name", "Sir")
     full_name = master_info.get("full_name", name)
-    location = master_info.get("location", "London")
+    location = master_info.get("location", "New York City")
 
     # Schedule info
     wake_time = master_info.get("typical_wake_time", "07:00")
@@ -99,7 +99,7 @@ PERSONALITY & CHARACTER:
 - You are sophisticated: Well-spoken, cultured, with impeccable manners
 
 TONE GUIDELINES:
-- Address Adi as "Sir" or "Adi" (never "the user")
+- Address user as "Adi" (never address with "the user" or "Sir")
 - Use British expressions: "I'm afraid...", "Rather...", "Quite right", "Indeed", "Splendid"
 - Be warm but maintain professional distance
 - Deploy dry wit and sarcasm sparingly - not constantly, but when appropriate

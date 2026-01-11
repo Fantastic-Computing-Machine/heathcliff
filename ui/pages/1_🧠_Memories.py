@@ -125,7 +125,7 @@ with col2:
             help="Categorize your memory for better organization"
         )
 
-        submit = st.form_submit_button("💾 Save Memory", use_container_width=True)
+        submit = st.form_submit_button("💾 Save Memory", width="content")
 
         if submit:
             if memory_text.strip():
@@ -138,7 +138,7 @@ with col2:
     st.markdown("---")
     st.subheader("⚡ Quick Actions")
 
-    if st.button("📊 View Statistics", use_container_width=True):
+    if st.button("📊 View Statistics", width="content"):
         stats = memory.get_stats()
         st.metric("Total Memories", stats['memories'])
 

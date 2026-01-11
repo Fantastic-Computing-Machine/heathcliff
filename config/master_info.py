@@ -5,8 +5,8 @@ MASTER_INFO = {
     "full_name": "Aditya Agarwal",
     "location": "Jersey City",
     "timezone": "America/New_York",
-    "typical_wake_time": "07:00",
-    "typical_sleep_time": "23:00",
+    "typical_wake_time": "10:00",
+    "typical_sleep_time": "03:00",
     "work_hours": {
         "start": "09:00",
         "end": "18:00",

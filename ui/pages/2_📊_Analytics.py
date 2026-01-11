@@ -81,7 +81,7 @@ with col_left:
 
         if activity_data:
             df = pd.DataFrame(activity_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="content", hide_index=True)
     else:
         st.info("No recent activity to display")
 
@@ -143,7 +143,7 @@ with col2:
 
         role_df = pd.DataFrame(list(roles.items()), columns=["Role", "Messages"])
 
-        st.dataframe(role_df, use_container_width=True, hide_index=True)
+        st.dataframe(role_df, width="content", hide_index=True)
     else:
         st.info("No message data available")
 

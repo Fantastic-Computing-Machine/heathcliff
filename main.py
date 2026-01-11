@@ -4,7 +4,6 @@
 import sys
 import uuid
 import signal
-from datetime import datetime
 
 from config import Config
 from core.memory_manager import MemoryManager, AgentMemoryError

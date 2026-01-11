@@ -14,10 +14,10 @@
 
 ## Build, Test, and Development Commands
 
-- `python -m venv .venv && source .venv/bin/activate` keeps the heavy audio/LLM stack isolated; install deps via `pip install -r requirements.txt` afterward.
+- Install uv if you don't have it (`curl -LsSf https://astral.sh/uv/install.sh | sh`), then run `uv sync` to create `.venv` and install deps from `pyproject.toml` / `uv.lock`.
 - `cp .env.example .env` then set `GEMINI_API_KEY` and OAuth secrets before running anything that touches Google or Spotify APIs.
-- `python app.py` starts the wake-word driven voice loop using the active config; `Ctrl+C` shuts down gracefully and flushes logs.
-- `python -m pytest tests -v` runs the entire suite; filter with `-k <pattern>` for focused modules during iteration.
+- `uv run python app.py` starts the wake-word driven voice loop using the active config; `Ctrl+C` shuts down gracefully and flushes logs. Use `uv run python main.py --text` for text-only mode.
+- `uv run pytest tests -v` runs the entire suite; filter with `-k <pattern>` for focused modules during iteration.
 
 ## Coding Style & Naming Conventions
 
