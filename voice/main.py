@@ -1,8 +1,9 @@
-import speech_recognition as sr
-import pvporcupine
-import pyaudio
 import struct
 import threading
+
+import pvporcupine
+import pyaudio
+import speech_recognition as sr
 
 
 class VoiceListener:

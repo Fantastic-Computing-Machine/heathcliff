@@ -1,7 +1,8 @@
 import functools
-from logger import logger
 import time
 from typing import Any, Callable, ParamSpec, TypeVar
+
+from logger import logger
 
 P = ParamSpec("P")
 R = TypeVar("R")

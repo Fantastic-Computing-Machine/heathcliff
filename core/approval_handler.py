@@ -88,22 +88,42 @@ class StreamlitApprovalHandler(HumanApprovalCallbackHandler):
         """
         Request approval from user via Streamlit session state.
 
-        This method stores the approval request in session state and returns False
-        to trigger a HumanRejectedException, which pauses execution. The Streamlit
-        UI will then display the approval request and allow the user to respond.
-
         Args:
             input_str: String representation of tool inputs
 
         Returns:
-            False to pause execution (HumanApprovalCallbackHandler will raise exception)
+            False to pause execution (HumanRejectedException), True to proceed
         """
         if self.session_state is None:
-            # No session state provided - approval disabled (for testing)
-            logger.warning("Approval requested but no session_state provided - auto-approving")
+            logger.warning(
+                "Approval requested but no session_state provided - auto-approving"
+            )
             return True
 
-        # Store approval request in session state
+        # Check existing approval
+        if "pending_approval" in self.session_state:
+            approval = self.session_state["pending_approval"]
+            
+            # Check if this matches the current request
+            # We compare input, but ideally we'd have a unique ID per request
+            if approval.get("tool_input") == input_str:
+                status = approval.get("status")
+                
+                if status == "approved":
+                    logger.info("✅ consuming approved request")
+                    # Consume the approval so it doesn't persist
+                    del self.session_state["pending_approval"]
+                    return True
+                
+                if status == "rejected":
+                    logger.info("❌ rejecting request per user decision")
+                    # We leave it in session state so UI can show "rejected" feedback if needed
+                    # or we can clear it here too.
+                    # For now, let's clear it to reset state
+                    del self.session_state["pending_approval"]
+                    return False
+
+        # New request or different request
         self.session_state["pending_approval"] = {
             "tool_input": input_str,
             "status": "pending",
@@ -111,55 +131,7 @@ class StreamlitApprovalHandler(HumanApprovalCallbackHandler):
         }
 
         logger.info(f"Approval request stored in session state: {input_str[:100]}...")
-
-        # Return False to trigger HumanRejectedException and pause execution
-        # The UI will catch this and show the approval dialog
         return False
-
-    def on_tool_start(
-        self,
-        serialized: Dict[str, Any],
-        input_str: str,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **kwargs: Any,
-    ) -> Any:
-        """
-        Called when a tool is about to be executed.
-
-        This method is called by LangChain before executing any tool. It checks
-        if the tool requires approval, and if so, stores the request in session
-        state and raises an exception to pause execution.
-
-        Args:
-            serialized: Tool metadata
-            input_str: String representation of tool inputs
-            run_id: Unique ID for this execution
-            parent_run_id: ID of parent execution (if nested)
-            **kwargs: Additional arguments
-
-        Raises:
-            HumanRejectedException: If approval is required and not yet granted
-        """
-        # Store tool name for better error messages
-        tool_name = serialized.get("name", serialized.get("id", ["unknown"]))
-        if isinstance(tool_name, list):
-            tool_name = tool_name[-1] if tool_name else "unknown"
-
-        # Add tool name to session state approval request
-        if self._should_check_tool(serialized):
-            if self.session_state is not None:
-                self.session_state["pending_approval"]["tool_name"] = tool_name
-
-        # Call parent implementation (will check and raise if needed)
-        return super().on_tool_start(
-            serialized=serialized,
-            input_str=input_str,
-            run_id=run_id,
-            parent_run_id=parent_run_id,
-            **kwargs,
-        )
 
 
 def is_approval_pending(session_state: Dict[str, Any]) -> bool:
@@ -176,7 +148,9 @@ def is_approval_pending(session_state: Dict[str, Any]) -> bool:
     return approval is not None and approval.get("status") == "pending"
 
 
-def approve_request(session_state: Dict[str, Any], modified_input: Optional[str] = None):
+def approve_request(
+    session_state: Dict[str, Any], modified_input: Optional[str] = None
+):
     """
     Approve a pending tool execution request.
 
@@ -206,9 +180,9 @@ def reject_request(session_state: Dict[str, Any]):
 def clear_approval(session_state: Dict[str, Any]):
     """
     Clear the approval request from session state.
-
-    Args:
-        session_state: Streamlit session state
+    
+    DEPRECATED: Consumption is now handled in _request_approval.
+    Kept for backward compatibility.
     """
     if "pending_approval" in session_state:
         del session_state["pending_approval"]

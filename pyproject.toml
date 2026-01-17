@@ -18,16 +18,29 @@ dependencies = [
     "langsmith>=0.5.1",
     "mem0ai>=1.0.1",
     "playwright>=1.57.0",
+    "pvporcupine>=4.0.0",
+    "pyaudio>=0.2.14",
     "python-dotenv>=1.2.1",
     "python-telegram-bot>=22.5",
+    "pyttsx3>=2.99",
     "speechrecognition>=3.14.4",
     "spotipy>=2.25.2",
     "streamlit>=1.52.2",
     "uvicorn>=0.40.0",
+    "wikipedia>=1.4.0",
 ]
 
 [dependency-groups]
 dev = [
     "black>=25.12.0",
     "isort>=7.0.0",
+    "pre-commit>=3.6.0",
+    "pytest>=8.0.0",
 ]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.black]
+line-length = 88

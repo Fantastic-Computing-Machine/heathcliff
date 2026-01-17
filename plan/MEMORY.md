@@ -106,6 +106,12 @@ heathcliff/
 
 ## Recent Agent Activity
 
+- **2025-12-30**: **MemoryManager Readability Tweaks** ✅
+  - Cached local Chroma PersistentClient in `_chroma_client` to reuse across instances.
+  - Normalized Mem0 recall results via helper methods and removed unreachable code path.
+  - Added `_empty_query_results()` for consistent empty responses.
+  - Switched session-clear error logging to `logger.warning` for consistency.
+
 - **2025-12-28**: **Mem0 Chroma Config Fix** ✅
   - Mem0 Chroma config expects `path` (or host/port) for local usage; `persist_directory` fails validation.
   - Avoid passing a `chromadb.CloudClient` object in Mem0 config; provide `api_key` + `tenant` (+ host/port) instead.
@@ -328,3 +334,12 @@ heathcliff/
   - Configured Gemini LLM + Gemini embeddings + Chroma Cloud via `config/config.py`.
   - Heathcliff now uses Mem0 SDK for memory add/search while chat/docs stay in Chroma Cloud.
   - Dockerfile + docker-compose now run `heathcliff` only.
+
+- **2025-12-29**: **Mem0 Extraction Gate + Delete Fix** ✅
+  - Memory extraction now only considers user messages and is gated by heuristic triggers to reduce noisy memories.
+  - Mem0 delete now uses `memory_id` keyword (per Mem0 docs) with fallback for older signatures.
+  - UI "Show All Memories" now uses Mem0 `get_all` adapter for consistent IDs and deletion.
+
+- **2026-01-03**: **Simplified tools/__init__.py exports** ✅
+  - Removed lazy map-based exports and __getattr__ indirection.
+  - Switched to explicit imports + direct get_all_tools construction with same toolkit fallback warnings.

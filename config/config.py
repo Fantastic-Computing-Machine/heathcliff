@@ -4,8 +4,9 @@ import os
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
-from logger import logger
+
 from config.master_info import MASTER_INFO
+from logger import logger
 
 load_dotenv(".env")
 
@@ -15,7 +16,6 @@ class MasterConf:
 
 
 class ChromaConf:
-
     USE_REMOTE_CHROMA = os.getenv("USE_REMOTE_CHROMA", "false").lower() == "true"
 
     CHROMA_API_KEY = os.getenv("CHROMA_API_KEY", "")

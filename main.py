@@ -1,16 +1,16 @@
 # ABOUTME: Main entry point for Heathcliff voice assistant
 # ABOUTME: Orchestrates audio, agent, and memory components
 
+import signal
 import sys
 import uuid
-import signal
 
 from config import Config
-from core.memory_manager import MemoryManager, AgentMemoryError
-from core.audio_handler import AudioHandler
 from core.agent_core import HeathcliffAgent
-from tools import get_all_tools
+from core.audio_handler import AudioHandler
+from core.memory_manager import AgentMemoryError, MemoryManager
 from logger import logger
+from tools import get_all_tools
 
 
 class HeathcliffAssistant:
@@ -32,7 +32,7 @@ class HeathcliffAssistant:
         # Initialize agent with tools
         logger.info("Initializing agent with tools...")
         tools = get_all_tools()
-        self.agent = HeathcliffAgent(memory_manager=self.memory, tools=tools)
+        self.agent = HeathcliffAgent(memory_manager=self.memory)
 
         # Initialize audio handler
         logger.info("Initializing audio handler...")

@@ -66,7 +66,7 @@ logs/
 log.log
 
 # Spotify OAuth token cache
-.spotify_cache
+*.spotify_cache
 
 # Flask stuff:
 instance/
@@ -171,4 +171,7 @@ cython_debug/
 chroma_db/*
 credentials.json
 token.json
+keys/token.json
+keys/*.json
 uv.lock
+.vscode/*

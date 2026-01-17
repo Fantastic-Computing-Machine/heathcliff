@@ -36,6 +36,16 @@ uv run python main.py
 uv run streamlit run ui/Home.py
 ```
 
+## Development
+
+To ensure code quality and consistent formatting, this project uses `pre-commit` hooks (isort, black, etc.).
+
+**Run formatting and linting manually:**
+
+```bash
+uv run pre-commit run --all-files
+```
+
 **That's it!** For detailed setup including Google OAuth, Spotify, and other integrations, see [SETUP.md](SETUP.md).
 
 ## Key Features

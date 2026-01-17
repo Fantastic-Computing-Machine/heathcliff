@@ -14,7 +14,8 @@ _spotify_client: Optional[spotipy.Spotify] = None
 
 from spotipy.oauth2 import CacheFileHandler
 
-SPOTIFY_CACHE_PATH = ".spotify_cache"
+SPOTIFY_CACHE_PATH = "keys/.spotify_cache"
+
 
 def _get_spotify_client() -> spotipy.Spotify:
     """Get authenticated Spotify client (singleton).
@@ -93,12 +94,16 @@ def _get_active_device(sp: spotipy.Spotify) -> Optional[str]:
         # Prefer active device
         for device in devices["devices"]:
             if device.get("is_active"):
-                logger.info(f"Using active device: {device.get('name')} ({device.get('type')})")
+                logger.info(
+                    f"Using active device: {device.get('name')} ({device.get('type')})"
+                )
                 return device["id"]
 
         # Fall back to first available device
         first_device = devices["devices"][0]
-        logger.info(f"No active device, using first available: {first_device.get('name')} ({first_device.get('type')})")
+        logger.info(
+            f"No active device, using first available: {first_device.get('name')} ({first_device.get('type')})"
+        )
         return first_device["id"]
 
     except Exception as e:

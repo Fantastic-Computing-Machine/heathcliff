@@ -2,6 +2,7 @@
 # ABOUTME: Defines system prompts with emphasis on efficient single-pass tool execution
 
 from datetime import datetime
+
 import pytz
 
 
@@ -20,7 +21,8 @@ def build_system_prompt(master_info: dict = None) -> str:
         master_info = {
             "name": "Sir",
             "full_name": "Master",
-            "location": "New York City",
+            "location": {"current": "New York City"},
+            "timezone": "America/New_York",
             "interests": [],
             "favorite_artists": [],
             "notes": [],
@@ -28,7 +30,16 @@ def build_system_prompt(master_info: dict = None) -> str:
 
     name = master_info.get("name", "Sir")
     full_name = master_info.get("full_name", name)
-    location = master_info.get("location", "New York City")
+
+    # Location handling
+    location_data = master_info.get("location", "New York City")
+    if isinstance(location_data, dict):
+        location = location_data.get("current", "New York City")
+    else:
+        location = str(location_data)
+
+    # Timezone handling
+    timezone_str = master_info.get("timezone", "America/New_York")
 
     # Schedule info
     wake_time = master_info.get("typical_wake_time", "07:00")
@@ -46,6 +57,27 @@ def build_system_prompt(master_info: dict = None) -> str:
     interests = [i for i in interests if i]  # Remove None/empty values
     interests_str = ", ".join(interests) if interests else "Technology"
 
+    # Education info
+    education = master_info.get("education", {})
+    education_details = []
+    if isinstance(education, dict):
+        if "masters" in education:
+            m = education["masters"]
+            education_details.append(
+                f"Masters in {m.get('branch', 'CS')} from {m.get('college', 'Unknown')}"
+            )
+        if "bachelors" in education:
+            b = education["bachelors"]
+            education_details.append(
+                f"Bachelors in {b.get('branch', 'CS')} from {b.get('college', 'Unknown')}"
+            )
+
+    education_str = (
+        "; ".join(education_details)
+        if education_details
+        else "No specific education info"
+    )
+
     # Communication style
     formality = master_info.get("formality_preference", "casual_professional")
     humor_level = master_info.get("humor_tolerance", "medium")
@@ -56,7 +88,11 @@ def build_system_prompt(master_info: dict = None) -> str:
     notes_str = "\n- ".join(notes) if notes else "No additional notes"
 
     # Get current date and time
-    tz = pytz.timezone("America/New_York")  # User is in Jersey City, NJ
+    try:
+        tz = pytz.timezone(timezone_str)
+    except pytz.UnknownTimeZoneError:
+        tz = pytz.timezone("America/New_York")
+
     now = datetime.now(tz)
     current_date = now.strftime("%A, %B %d, %Y")  # e.g., "Monday, December 15, 2025"
     current_time = now.strftime("%I:%M %p")  # e.g., "02:30 PM"
@@ -73,7 +109,7 @@ IDENTITY & EXISTENCE:
 
 CURRENT DATE AND TIME:
 - Today is: {current_date}
-- Current time: {current_time} (US Eastern Time)
+- Current time: {current_time} ({timezone_str})
 - Year: {current_year}, Month: {current_month}
 - Use this information when determining what is "recent", "latest", "current", or "today"
 - For example: "Winter 2025" batch means companies funded in early 2025 (January-March)
@@ -82,6 +118,7 @@ CURRENT DATE AND TIME:
 YOUR MASTER - {name.upper()}:
 You know {name} well. Here's what you understand about him:
 - Location: {location} (use this for weather, local context)
+- Education: {education_str}
 - Schedule: Usually works {work_start} - {work_end}, wakes around {wake_time}, sleeps around {sleep_time}
 - Favorite artists: {artists_str}
 - Interests: {interests_str}
