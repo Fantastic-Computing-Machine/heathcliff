@@ -1,30 +1,41 @@
 # ABOUTME: Middleware configuration for agent execution control
 # ABOUTME: Includes moderation, tool selection, rate limiting, and summarization
 
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
+
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    LLMToolSelectorMiddleware,
+    SummarizationMiddleware,
+)
 
 from logger import logger
 
 
-def create_middleware_stack(
-    llm: Optional[Any] = None,
-) -> List[Any]:
-    """
-    Create middleware stack for agent execution.
+class Middlewares:
+    def __init__(self, llm) -> None:
+        """Initialize middleware components with given LLM."""
 
-    Middleware order matters - they execute in the order they're added:
-    1. Tool selection (filter tools before model call)
-    2. Model call limits (prevent excessive LLM calls)
-    3. Tool call limits (prevent excessive tool calls)
-    4. Tool retry (handle transient failures)
-    5. Summarization (manage conversation history)
+        self._llm = llm
 
-    Args:
-        config: Configuration object with middleware settings
-        llm: Optional LLM instance for tool selection and summarization
+    def _tool_selctor(self) -> AgentMiddleware:
+        return LLMToolSelectorMiddleware(
+            model=self._llm,
+            max_tools=3,
+            always_include=["search"],
+        )
 
-    Returns:
-        List of middleware instances
-    """
-    logger.info("Middleware disabled (class-based config has no middleware section).")
-    return []
+    def _summarization(self) -> AgentMiddleware:
+        return SummarizationMiddleware(
+            model=self._llm,
+            trigger=("tokens", 4000),
+            keep=("messages", 20),
+        )
+
+    def get(self) -> List[Any]:
+        """Return list of middleware instances."""
+
+        return [
+            self._tool_selctor,
+            self._summarization,
+        ]

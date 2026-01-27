@@ -1,8 +1,8 @@
 # ABOUTME: Utilities package initialization
 # ABOUTME: Exports shared utility functions and classes
 
-from .google_auth import get_google_credentials
-from .langfuse_client import (
+from utils.google_auth import get_google_credentials
+from utils.langfuse_client import (
     get_langfuse_callback_handler,
     get_langfuse_client,
     log_langfuse_interaction,

@@ -12,19 +12,20 @@ from utils.google_auth import PEOPLE_SCOPES, get_google_credentials
 
 def _get_people_service():
     """Get authenticated Google People API service."""
-    # We use a separate token file for people to avoid conflicts or just re-use if we want unified auth
-    # But the project seems to use "token.pickle" generally, but "drive_token.pickle" in comm_tools.
-    # Let's use "people_token.pickle" to be safe and modular, or reuse "token.pickle" if we want one login.
-    # The user deleted "token.pickle" earlier to refresh scopes.
-    # If we use "token.pickle" here, and it was created without PEOPLE scopes, it will fail/re-auth.
-    # Let's use "token.pickle" to encourage a single sign-on experience,
-    # but we must catch the "invalid grant" or scope error if possible.
-    # Given the recent conversation, the user is rebuilding token.pickle.
-    creds = get_google_credentials(PEOPLE_SCOPES, token_file="token.pickle")
+    # Use unified token file in keys/ directory for single sign-on experience
+    creds = get_google_credentials(PEOPLE_SCOPES)
     return build("people", "v1", credentials=creds)
 
 
-@tool
+@tool(
+    "search_contacts",
+    description="""Search Google Contacts for a person by name, email, or phone.
+    Use this when the user asks for someone's phone number, email address,
+    or contact details.
+    Input should be a string containing the name, email, or phone number to search for.
+    Returns a string containing the found contacts' details (Name, Emails, Phones).
+    """,
+)
 def search_contacts(query: str) -> str:
     """
     Search for a contact in the user's Google Contacts.
@@ -60,7 +61,7 @@ def search_contacts(query: str) -> str:
             phones = person.get("phoneNumbers", [])
 
             name = names[0].get("displayName") if names else "Unknown Name"
-            
+
             email_list = [e.get("value") for e in emails]
             phone_list = [p.get("value") for p in phones]
 
@@ -69,7 +70,7 @@ def search_contacts(query: str) -> str:
                 contact_info += f"\n  Emails: {', '.join(email_list)}"
             if phone_list:
                 contact_info += f"\n  Phones: {', '.join(phone_list)}"
-            
+
             formatted_contacts.append(contact_info)
 
         return "\n---\n".join(formatted_contacts)

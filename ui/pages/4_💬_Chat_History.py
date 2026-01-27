@@ -3,8 +3,8 @@
 
 import os
 import sys
+
 import streamlit as st
-from datetime import datetime
 
 # Add parent directory to path
 sys.path.insert(
@@ -12,17 +12,11 @@ sys.path.insert(
 )
 
 from config import Config
-from core.memory_manager import MemoryManager
+from ui.shared import get_memory_manager
 
 st.set_page_config(page_title="Chat History", page_icon="💬", layout="wide")
 
-
-# Initialize memory
-def get_memory():
-    return MemoryManager()
-
-
-memory = get_memory()
+memory = get_memory_manager()
 
 st.title("💬 Chat History")
 
