@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  # Streamlit Web UI
+  ui:
+    build:
+      context: .
+      target: ui
+    env_file:
+      - .env
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+  # Voice Agent Platform (Raspberry Pi Native)
+  platform:
+    build:
+      context: .
+      target: platform
+    env_file:
+      - .env
+    devices:
+      # Pass audio devices to container
+      - "/dev/snd:/dev/snd"
+    group_add:
+      - audio
+    restart: unless-stopped
+    # Environment variable to hint platform mode if needed
+    environment:
+      - HEATHCLIFF_MODE=voice
