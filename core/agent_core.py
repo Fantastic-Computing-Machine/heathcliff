@@ -6,11 +6,12 @@ sys.path.append(".")
 
 import os
 import uuid
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from middlewares.built_in import BuiltInMiddlewares
 
 from config import Config
 from instructions.prompts import build_system_prompt, build_user_context
@@ -20,17 +21,6 @@ from utils.langfuse_client import (
     get_langfuse_callback_handler,
     log_langfuse_interaction,
 )
-
-TOOL_NAME_ALIASES: Dict[str, Set[str]] = {
-    "play_track": {"spotify", "music_player", "play_music"},
-    "pause_playback": {"pause_music", "spotify_pause"},
-    "current_track": {"now_playing", "spotify_status"},
-    "search_web": {"search", "web", "google_search"},
-    "wikipedia_search": {"wikipedia", "wiki"},
-    "get_news": {"news", "headlines"},
-    "get_weather": {"weather"},
-}
-
 
 os.environ["MEM0_TELEMETRY"] = "False"
 
@@ -60,7 +50,7 @@ class HeathcliffAgent:
         """
         return cls()
 
-    def __init__(self, memory_manager=None):
+    def __init__(self, memory_manager=None) -> None:
         """
         Initialize the Heathcliff agent.
 
@@ -114,6 +104,9 @@ class HeathcliffAgent:
 
         self.llm = ChatGoogleGenerativeAI(**llm_kwargs)
 
+        # Initialize middleware stack with LLM
+        self._middleware_stack = BuiltInMiddlewares().get()
+
         # Build the agent executor
         self.system_prompt = self._build_prompt_template()
         self.executor = self._build_agent()
@@ -124,80 +117,6 @@ class HeathcliffAgent:
             self.max_iterations,
         )
 
-    def _prepare_tools(
-        self,
-        tools: Optional[Union[Dict[str, Callable[..., str]], Iterable]],
-    ) -> Dict[str, Callable[..., str]]:
-        """Normalize tool registry to a simple name -> callable mapping."""
-        normalized: Dict[str, Callable[..., str]] = {}
-
-        if not tools:
-            return normalized
-
-        if isinstance(tools, dict):
-            iterator = tools.items()
-            for name, func in iterator:
-                if callable(func):
-                    self._register_tool(normalized, name, func)
-            return normalized
-
-        for tool in tools:
-            tool_name = getattr(tool, "name", None)
-            if tool_name and callable(getattr(tool, "invoke", None)):
-                wrapped = self._wrap_langchain_tool(tool)
-                self._register_tool(normalized, tool_name, wrapped)
-            elif callable(tool):
-                self._register_tool(normalized, getattr(tool, "__name__", "tool"), tool)
-
-        return normalized
-
-    def _wrap_langchain_tool(self, tool: Any) -> Callable[..., Any]:
-        """Wrap LangChain BaseTool instances so they match the callable contract."""
-
-        def _runner(*args, **kwargs):
-            tool_input: Any
-
-            if kwargs:
-                tool_input = kwargs
-            elif len(args) == 1:
-                tool_input = args[0]
-            elif len(args) > 1:
-                tool_input = list(args)
-            else:
-                tool_input = {}
-
-            try:
-                return tool.invoke(tool_input)
-            except TypeError:
-                # Fallback to the original invocation style if the tool expects kwargs
-                if kwargs:
-                    return tool.invoke(**kwargs)
-                return tool.invoke(*args)
-
-        return _runner
-
-    def _register_tool(
-        self, registry: Dict[str, Callable[..., Any]], raw_name: str, func: Callable
-    ) -> None:
-        """Register a tool plus any aliases for easier LLM routing."""
-        if not raw_name:
-            raw_name = getattr(func, "__name__", "tool")
-
-        canonical_name = raw_name.lower()
-        registry[canonical_name] = func
-
-        alias_target = canonical_name
-        for key, aliases in TOOL_NAME_ALIASES.items():
-            if canonical_name == key or canonical_name in aliases:
-                alias_target = key
-                break
-
-        # Ensure canonical alias target points to the same function
-        registry[alias_target] = func
-
-        for alias in TOOL_NAME_ALIASES.get(alias_target, set()):
-            registry.setdefault(alias, func)
-
     def _build_prompt_template(self) -> str:
         """Create system prompt for react agent."""
         master_info = Config.MASTER_INFO
@@ -207,12 +126,11 @@ class HeathcliffAgent:
     def _build_agent(self):
         """Build LangChain agent using create_agent."""
 
-        # for tool in self._original_langchain_tools:
-        #     logger.info(f"Registered tool: {tool.name}")
-
         agent_graph = create_agent(
+            name="Heathcliff",
             model=self.llm,
             tools=self._original_langchain_tools,
+            middleware=self._middleware_stack,
             system_prompt=self.system_prompt,
         )
 
