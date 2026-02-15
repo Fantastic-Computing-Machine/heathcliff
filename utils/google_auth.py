@@ -146,5 +146,4 @@ PEOPLE_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly"]
 ALL_GOOGLE_SCOPES = GMAIL_SCOPES + CALENDAR_SCOPES + DRIVE_SCOPES + PEOPLE_SCOPES
 
 if __name__ == "__main__":
-
     get_google_credentials(ALL_GOOGLE_SCOPES)

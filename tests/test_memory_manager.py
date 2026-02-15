@@ -1,12 +1,13 @@
 # ABOUTME: Unit tests for MemoryManager ChromaDB-backed memory storage
 # ABOUTME: Tests all CRUD operations, persistence, and edge cases
 
-import pytest
-import tempfile
-import shutil
 import os
+import shutil
 import sys
+import tempfile
 import time
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

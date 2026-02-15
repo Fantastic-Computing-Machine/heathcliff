@@ -1,10 +1,11 @@
 # ABOUTME: End-to-end tests for HeathcliffAgent with real components
 # ABOUTME: Tests complete conversation flows with actual (or mocked) Gemini API
 
-import pytest
 import os
 import sys
 from unittest.mock import Mock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

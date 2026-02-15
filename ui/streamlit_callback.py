@@ -31,7 +31,7 @@ class StatusCallbackHandler(BaseCallbackHandler):
     ) -> None:
         """Run when LLM starts running."""
         # Get model name if available
-        model_name = serialized.get("kwargs", {}).get("model", "Gemini")
+        model_name = (serialized or {}).get("kwargs", {}).get("model", "Gemini")
         if isinstance(model_name, str) and "/" in model_name:
             model_name = model_name.split("/")[-1]
 
@@ -106,7 +106,7 @@ class StatusCallbackHandler(BaseCallbackHandler):
     ) -> None:
         """Run when chain starts."""
         # Only show for the main agent chain, not sub-chains
-        chain_name = serialized.get("name", "")
+        chain_name = (serialized or {}).get("name", "")
         if self.step_count == 0 and "agent" in chain_name.lower():
             self.status_container.update(label="🚀 Starting...", state="running")
             self._add_step("📋", "Analyzing your request...")

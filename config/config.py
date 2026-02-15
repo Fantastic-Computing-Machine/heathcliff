@@ -27,8 +27,8 @@ class ChromaConf:
 
 
 class RuntimeConf:
-    MODEL = "gemini-2.5-flash-lite"
-    SUMMARY_MIDDLEWARE_LLM = "gemini-2.5-flash-lite"
+    MODEL = "gemini-2.5-pro"
+    SUMMARY_MIDDLEWARE_LLM = "gemini-2.5-pro"
     TEMPERATURE = 0.5
     MAX_TOKENS = 8192
     TOP_P = 0.7

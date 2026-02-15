@@ -1,23 +1,22 @@
 # ABOUTME: Middleware configuration for agent execution control
-# ABOUTME: Includes moderation, tool selection, rate limiting, and summarization
+# ABOUTME: Includes tool selection (structured output) and summarization
 
 from typing import Any, List
 
 from langchain.agents.middleware import (
     AgentMiddleware,
-    LLMToolSelectorMiddleware,
     SummarizationMiddleware,
 )
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from config import Config
+from core.middlewares.tool_selector import StructuredToolSelectorMiddleware
 from logger import logger
 
 SUMMARY_MIDDLEWARE_LLM = Config.SUMMARY_MIDDLEWARE_LLM
 
 
 class BuiltInMiddlewares:
-
     def __init__(self) -> None:
         """Initialize middleware components with given LLM."""
 
@@ -27,10 +26,13 @@ class BuiltInMiddlewares:
         )
 
     def _tool_selector(self) -> AgentMiddleware:
-        return LLMToolSelectorMiddleware(
+        return StructuredToolSelectorMiddleware(
             model=self._llm,
-            max_tools=3,
-            always_include=["search"],
+            max_tools=5,
+            always_include=[
+                "search_and_scrape",
+                "search_web",
+            ],
         )
 
     def _summarization(self) -> AgentMiddleware:

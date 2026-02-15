@@ -11,9 +11,10 @@ from typing import Any, Dict, List, Optional
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from middlewares.built_in import BuiltInMiddlewares
 
 from config import Config
+from core.memory_manager import MemoryManager
+from core.middlewares.built_in import BuiltInMiddlewares
 from instructions.prompts import build_system_prompt, build_user_context
 from logger import logger
 from tools import get_all_tools
@@ -58,7 +59,6 @@ class HeathcliffAgent:
             memory_manager: Optional MemoryManager instance. If not provided,
                             a new one will be auto-initialized.
         """
-        from core.memory_manager import MemoryManager
 
         # Auto-initialize memory if not provided
         self.memory_manager = (
