@@ -1,0 +1,32 @@
+{
+    "context": {
+        "fileName": "AGENTS.md",
+        "fileFiltering": {
+            "respectGitIgnore": true,
+            "enableRecursiveFileSearch": true,
+            "maxFileCount": 150,
+            "excludedExtensions": [
+                ".png",
+                ".jpg",
+                ".exe",
+                ".lock"
+            ]
+        },
+        "compression": {
+            "enabled": true,
+            "threshold": 0.8
+        }
+    },
+    "model": {
+        "temperature": 0.4,
+        "topP": 0.1
+    },
+    "ui": {
+        "hideTips": true,
+        "hideBanner": true,
+        "showTokenUsage": true
+    },
+    "telemetry": {
+        "enabled": false
+    }
+}

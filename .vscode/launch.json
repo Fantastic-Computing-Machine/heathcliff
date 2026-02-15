@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Console UI",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "module": "streamlit",
+            "args": [
+                "run",
+                "ui/Home.py"
+            ],
+            "python": "uv",
+            "pythonArgs": [
+                "run",
+                "python"
+            ],
+            "env": {
+                "STREAMLIT_DEBUG": "1"
+            }
+        }
+    ]
+}
