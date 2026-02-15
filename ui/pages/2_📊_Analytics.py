@@ -13,18 +13,12 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from core.memory_manager import MemoryManager
+from ui.shared import get_memory_manager
 
 st.set_page_config(page_title="Analytics", page_icon="📊", layout="wide")
 
 
-# Initialize memory
-@st.cache_resource
-def get_memory():
-    return MemoryManager()
-
-
-memory = get_memory()
+memory = get_memory_manager()
 
 # Header
 st.title("📊 Usage Analytics")

@@ -1,10 +1,11 @@
 # ABOUTME: Integration tests for HeathcliffAgent with real MemoryManager
 # ABOUTME: Tests full flow, multi-turn conversations, and component interaction
 
-import pytest
 import os
 import sys
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

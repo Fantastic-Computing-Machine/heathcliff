@@ -24,7 +24,7 @@
 **Core**
 
 - **STT**: Whisper (local) or Google Speech-to-Text
-- **Wake word**: Porcupine/Picovoice (free tier) or pvporcupine
+- **Wake word**: OpenWakeWord (local, free) - pre-trained models for "hey_jarvis", "alexa", etc.
 - **LLM**: Gemini Flash 2.5 via LangChain
 - **Agent**: LangGraph for tool orchestration
 - **Vector DB**: ChromaDB (simple, local)

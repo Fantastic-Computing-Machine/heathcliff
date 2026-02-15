@@ -1,4 +1,4 @@
-# ABOUTME: Spotify integration for playback control and track information
+# ABOUTME: Spotify integration for playback control, track info, and playlist management
 # ABOUTME: Uses Spotipy library with OAuth authentication
 
 from typing import Any, List, Literal, Optional
@@ -14,7 +14,8 @@ _spotify_client: Optional[spotipy.Spotify] = None
 
 from spotipy.oauth2 import CacheFileHandler
 
-SPOTIFY_CACHE_PATH = ".spotify_cache"
+SPOTIFY_CACHE_PATH = Config.SPOTIFY_CACHE_PATH
+
 
 def _get_spotify_client() -> spotipy.Spotify:
     """Get authenticated Spotify client (singleton).
@@ -39,8 +40,7 @@ def _get_spotify_client() -> spotipy.Spotify:
             client_id=Config.SPOTIFY_CLIENT_ID,
             client_secret=Config.SPOTIFY_CLIENT_SECRET,
             redirect_uri="http://127.0.0.1:8100/callback",
-            scope="user-modify-playback-state user-read-playback-state user-read-currently-playing",
-            # cache_path=SPOTIFY_CACHE_PATH,
+            scope="user-modify-playback-state user-read-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative",
             cache_handler=CacheFileHandler(cache_path=SPOTIFY_CACHE_PATH),
             open_browser=False,
         )
@@ -93,12 +93,16 @@ def _get_active_device(sp: spotipy.Spotify) -> Optional[str]:
         # Prefer active device
         for device in devices["devices"]:
             if device.get("is_active"):
-                logger.info(f"Using active device: {device.get('name')} ({device.get('type')})")
+                logger.info(
+                    f"Using active device: {device.get('name')} ({device.get('type')})"
+                )
                 return device["id"]
 
         # Fall back to first available device
         first_device = devices["devices"][0]
-        logger.info(f"No active device, using first available: {first_device.get('name')} ({first_device.get('type')})")
+        logger.info(
+            f"No active device, using first available: {first_device.get('name')} ({first_device.get('type')})"
+        )
         return first_device["id"]
 
     except Exception as e:
@@ -109,10 +113,16 @@ def _get_active_device(sp: spotipy.Spotify) -> Optional[str]:
 @tool
 def play_track(query: str) -> str:
     """
-    Search for a track on Spotify and play it. Use this to play music.
+    Search for a track on Spotify and play it.
+
+    IMPORTANT: Use the COMPLETE song name AND artist for best results.
+    Examples:
+    - "Taylor Swift Love Story" ✓
+    - "Bohemian Rhapsody Queen" ✓
+    - "love story" ✗ (too vague)
 
     Args:
-        query: Song name, artist, or search query
+        query: Full song name and artist (e.g., "Blinding Lights The Weeknd")
 
     Returns:
         Confirmation message with track name and artist
@@ -123,13 +133,15 @@ def play_track(query: str) -> str:
 
         # Search for track
         logger.debug("Calling Spotify search API")
-        results = sp.search(q=query, type="track", limit=1)
+        results = sp.search(q=query, type="track", limit=1) or {}
+        tracks = results.get("tracks") if isinstance(results, dict) else None
+        items = tracks.get("items") if tracks else []
 
-        if not results["tracks"]["items"]:
+        if not items:
             logger.warning(f"No tracks found for query: {query}")
             return f"No tracks found for: {query}"
 
-        track = results["tracks"]["items"][0]
+        track = items[0]
         track_uri = track["uri"]
         track_name = track["name"]
         artist_name = track["artists"][0]["name"]
@@ -222,6 +234,109 @@ def current_track() -> str:
         return f"Error getting current track: {str(e)}"
 
 
+@tool
+def list_playlists() -> str:
+    """
+    List the user's Spotify playlists.
+
+    Returns:
+        A formatted list of playlist names
+    """
+    try:
+        logger.debug("Fetching user playlists")
+        sp = _get_spotify_client()
+        playlists = sp.current_user_playlists(limit=20)
+
+        if not playlists or not playlists.get("items"):
+            logger.debug("No playlists found")
+            return "No playlists found"
+
+        playlist_names = [p["name"] for p in playlists["items"]]
+        logger.info(f"Found {len(playlist_names)} playlists")
+
+        return "Your playlists:\n" + "\n".join(f"- {name}" for name in playlist_names)
+
+    except Exception as e:
+        logger.error(f"Error fetching playlists: {e}", exc_info=True)
+        return f"Error fetching playlists: {str(e)}"
+
+
+@tool
+def play_playlist(playlist_name: str) -> str:
+    """
+    Search for a playlist by name and start playing it.
+
+    This searches the user's own playlists (including saved/followed playlists)
+    for a matching name and starts playback from the beginning.
+
+    Args:
+        playlist_name: Name of the playlist to play (partial match supported)
+
+    Returns:
+        Confirmation message with playlist name and track count
+    """
+    try:
+        logger.debug(f"Searching for playlist: {playlist_name}")
+        sp = _get_spotify_client()
+
+        # Fetch user's playlists
+        playlists = sp.current_user_playlists(limit=50)
+
+        if not playlists or not playlists.get("items"):
+            logger.warning("No playlists found")
+            return "No playlists found in your library"
+
+        # Find matching playlist (case-insensitive partial match)
+        search_term = playlist_name.lower()
+        matched_playlist = None
+
+        for playlist in playlists["items"]:
+            if search_term in playlist["name"].lower():
+                matched_playlist = playlist
+                break
+
+        if not matched_playlist:
+            available = [p["name"] for p in playlists["items"][:10]]
+            logger.warning(f"No playlist matching '{playlist_name}' found")
+            return f"No playlist matching '{playlist_name}' found. Available playlists: {', '.join(available)}"
+
+        playlist_uri = matched_playlist["uri"]
+        playlist_display_name = matched_playlist["name"]
+        track_count = matched_playlist["tracks"]["total"]
+
+        logger.info(f"Found playlist: {playlist_display_name} ({track_count} tracks)")
+
+        # Get active device
+        device_id = _get_active_device(sp)
+        if not device_id:
+            logger.error("No active Spotify device found")
+            return "No active Spotify device found. Please open Spotify on your phone, computer, or web player and try again."
+
+        # Start playback from playlist context
+        logger.debug(f"Starting playlist playback on device {device_id}")
+        sp.start_playback(device_id=device_id, context_uri=playlist_uri)
+        logger.info(f"✓ Playing playlist: {playlist_display_name}")
+
+        return f"Now playing playlist: {playlist_display_name} ({track_count} tracks)"
+
+    except spotipy.exceptions.SpotifyException as e:
+        error_msg = str(e)
+        logger.error(f"Spotify API error: {error_msg}", exc_info=True)
+
+        if "Premium required" in error_msg or "PREMIUM_REQUIRED" in error_msg:
+            return "Spotify Premium is required to control playback"
+        elif "NO_ACTIVE_DEVICE" in error_msg:
+            return "No active Spotify device. Please open Spotify and try again"
+        else:
+            return f"Spotify error: {error_msg}"
+
+    except Exception as e:
+        logger.error(
+            f"Unexpected error playing playlist '{playlist_name}': {e}", exc_info=True
+        )
+        return f"Error playing playlist: {str(e)}"
+
+
 def get_spotify_tools() -> List[Any]:
     """
     Get all Spotify tools as a list for agent registration.
@@ -229,4 +344,4 @@ def get_spotify_tools() -> List[Any]:
     Returns:
         List of LangChain tools
     """
-    return [play_track, pause_playback, current_track]
+    return [play_track, play_playlist, pause_playback, current_track, list_playlists]

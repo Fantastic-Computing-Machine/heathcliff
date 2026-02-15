@@ -414,6 +414,149 @@ class MemoryManager:
         messages.sort(key=_sort_key)
         return messages[-n:]
 
+    def get_session_history(self, session_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all chat messages from a session using pagination to avoid quota limits.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            List of chat messages with role, content, and timestamp
+        """
+        batch_size = 100
+        offset = 0
+        all_messages = []
+
+        while True:
+            try:
+                results = self.chats.get(
+                    where={"session": session_id}, limit=batch_size, offset=offset
+                )
+            except Exception as e:
+                logger.error(f"Error fetching session history batch: {e}")
+                break
+
+            if not results or not results.get("documents"):
+                break
+
+            # Process batch
+            batch_messages = []
+            for i, doc in enumerate(results["documents"]):
+                metadata = results["metadatas"][i]
+                batch_messages.append(
+                    {
+                        "role": metadata.get("role", "unknown"),
+                        "content": doc,
+                        "timestamp": metadata.get("timestamp", ""),
+                        "order": metadata.get("order"),
+                        "id": results["ids"][i],
+                    }
+                )
+
+            all_messages.extend(batch_messages)
+
+            # If we got fewer than batch_size, we've reached the end
+            if len(batch_messages) < batch_size:
+                break
+
+            offset += batch_size
+
+        def _sort_key(msg: Dict[str, Any]):
+            order_value = msg.get("order")
+            if order_value is not None:
+                return (0, order_value)
+
+            timestamp = msg.get("timestamp", "")
+            role_priority = 0 if msg.get("role") == "user" else 1
+            return (1, timestamp, role_priority)
+
+        # Sort chronologically
+        all_messages.sort(key=_sort_key)
+        return all_messages
+
+    def get_all_sessions(
+        self, limit: int = 100, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve all distinct chat sessions with metadata.
+
+        Args:
+            limit: Maximum number of records to fetch per batch
+            offset: Starting offset for pagination (unused here as we scan all, but kept for API compat)
+
+        Returns:
+            List of session dictionaries with id, start/end time, and message count
+        """
+        try:
+            sessions = {}
+            batch_size = limit
+            current_offset = 0
+
+            while True:
+                # Fetch metadata in batches to avoid OOM
+                result = self.chats.get(
+                    include=["metadatas"], limit=batch_size, offset=current_offset
+                )
+                metadatas = result.get("metadatas", [])
+
+                if not metadatas:
+                    break
+
+                for meta in metadatas:
+                    if not meta:
+                        continue
+                    sess_id = meta.get("session")
+                    if not sess_id:
+                        continue
+
+                    timestamp = meta.get("timestamp", "")
+
+                    if sess_id not in sessions:
+                        sessions[sess_id] = {
+                            "session_id": sess_id,
+                            "start_time": timestamp,
+                            "end_time": timestamp,
+                            "msg_count": 0,
+                        }
+
+                    s = sessions[sess_id]
+                    s["msg_count"] += 1
+                    if timestamp and timestamp < s["start_time"]:
+                        s["start_time"] = timestamp
+                    if timestamp and timestamp > s["end_time"]:
+                        s["end_time"] = timestamp
+
+                if len(metadatas) < batch_size:
+                    break
+
+                current_offset += batch_size
+
+            return sorted(
+                list(sessions.values()), key=lambda x: x["end_time"], reverse=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to get sessions: {e}")
+            return []
+
+    def delete_all_chats(self) -> bool:
+        """
+        Delete all chat history.
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Get all IDs first
+            result = self.chats.get()
+            ids = result.get("ids", [])
+            if ids:
+                self.chats.delete(ids=ids)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete all chats: {e}")
+            return False
+
     def index_document(
         self,
         content: str,

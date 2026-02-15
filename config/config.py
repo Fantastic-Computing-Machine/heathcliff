@@ -4,10 +4,14 @@ import os
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
-from logger import logger
+
 from config.master_info import MASTER_INFO
+from logger import logger
 
 load_dotenv(".env")
+
+if not os.path.exists("keys"):
+    os.makedirs("keys")
 
 
 class MasterConf:
@@ -15,7 +19,6 @@ class MasterConf:
 
 
 class ChromaConf:
-
     USE_REMOTE_CHROMA = os.getenv("USE_REMOTE_CHROMA", "false").lower() == "true"
 
     CHROMA_API_KEY = os.getenv("CHROMA_API_KEY", "")
@@ -27,7 +30,8 @@ class ChromaConf:
 
 
 class RuntimeConf:
-    MODEL = "gemini-2.5-flash-lite"
+    MODEL = "gemini-2.5-pro"
+    SUMMARY_MIDDLEWARE_LLM = "gemini-2.5-pro"
     TEMPERATURE = 0.5
     MAX_TOKENS = 8192
     TOP_P = 0.7
@@ -82,9 +86,12 @@ class PlatformConf:
     # Google / Gemini API Keys
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-    GOOGLE_APPLICATION_CREDENTIALS = os.getenv(
-        "GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"
+    _creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "credentials.json")
+    GOOGLE_APPLICATION_CREDENTIALS = (
+        _creds_path if os.path.isabs(_creds_path) else os.path.join("keys", _creds_path)
     )
+    GOOGLE_TOKEN_FILE_PATH = os.path.join("keys", "token.json")
+
     # Google Search
     GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
     GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
@@ -92,6 +99,7 @@ class PlatformConf:
     # Spotify API Credentials
     SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
     SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+    SPOTIFY_CACHE_PATH = os.path.join("keys", ".cache")
 
     # Messaging Platform Tokens
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

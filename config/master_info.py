@@ -1,9 +1,16 @@
 # ABOUTME: Master profile information used to personalize Heathcliff responses
 
+import os
+
 MASTER_INFO = {
     "name": "Adi",
+    "email": os.getenv("MASTER_EMAIL", "adiagarwal1509@gmail.com"),
+    "linkedin": os.getenv("MASTER_LINKEDIN", ""),
+    "github": "https://github.com/adiagarwalrock",
+    "twitter": "https://x.com/strike_ag",
+    "instagram": "",
+    "website": "https://adityaagarwal.me",
     "full_name": "Aditya Agarwal",
-    "location": "Jersey City",
     "timezone": "America/New_York",
     "typical_wake_time": "10:00",
     "typical_sleep_time": "03:00",
@@ -31,4 +38,22 @@ MASTER_INFO = {
         "Coffee enthusiast - never mock the caffeine dependency",
         "WSL environment - manual OAuth flows preferred",
     ],
+    "education": {
+        "bachelors": {
+            "degree": "B.Tech",
+            "branch": "Computer Science",
+            "college": "Alliance University",
+            "graduation": "2017 - 2021",
+        },
+        "masters": {
+            "degree": "M.S.",
+            "branch": "Computer Science",
+            "college": "Stevens Institute of Technology",
+            "graduation": "2022 - 2024",
+        },
+    },
+    "location": {
+        "birth": "India",
+        "current": "Jersey City, NJ, USA",
+    },
 }

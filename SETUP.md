@@ -93,6 +93,7 @@ pip install -r requirements.txt
 5. Place `credentials.json` in the project root directory
 
 **Required Scopes:**
+
 ```
 https://www.googleapis.com/auth/gmail.readonly
 https://www.googleapis.com/auth/gmail.send
@@ -194,8 +195,8 @@ LANGFUSE_RELEASE=local-dev
 Edit `config/config.py` to customize settings:
 
 ```yaml
-# Wake word (must be supported by Porcupine)
-wake_word: "heathcliff"  # or "jarvis", "alexa", "computer", etc.
+# Wake word (must be supported by OpenWakeWord)
+wake_word: "hey_jarvis"  # or "alexa", "hey_mycroft", etc.
 
 # TTS settings
 tts:
@@ -305,6 +306,7 @@ python main.py --text
 ```
 
 Try:
+
 - "What's the weather?"
 - "Search for artificial intelligence"
 - "Tell me the time"
@@ -328,21 +330,25 @@ print(get_news.invoke("technology"))
 ### PyAudio Installation Issues
 
 **Linux:**
+
 ```bash
 sudo apt install python3-dev portaudio19-dev
 pip install --force-reinstall pyaudio
 ```
 
 **macOS:**
+
 ```bash
 brew install portaudio
 pip install --global-option='build_ext' --global-option='-I/opt/homebrew/include' --global-option='-L/opt/homebrew/lib' pyaudio
 ```
 
-### Porcupine Wake Word Not Working
+### OpenWakeWord Wake Word Issues
 
-- Free tier has limited wake words: "jarvis", "alexa", "computer", "hey google", "hey siri", "porcupine", "bumblebee"
-- For custom wake words, get access key from [Picovoice Console](https://console.picovoice.ai/)
+- Pre-trained models include: "hey_jarvis", "alexa", "hey_mycroft", and more
+- Threshold can be adjusted in `core/audio_handler.py` (default: 0.5)
+- For custom wake words, you can train your own models using the [OpenWakeWord training guide](https://github.com/dscripka/openWakeWord#training-new-models)
+- Models are automatically downloaded on first use
 
 ### Google OAuth Issues
 

@@ -15,6 +15,7 @@ This file serves as the **working memory** for all coding agents on the Heathcli
 ## Code Patterns & Implementation Notes
 
 ### Phase 1 Foundation - COMPLETED
+
 - **Config Management**: Singleton `Config` instance exported from `config/__init__.py`
 - **Memory Manager**: ChromaDB with 3 collections (memories, chats, my_data) in `core/memory_manager.py`
   - `add_memory()` for long-term facts with categories
@@ -23,18 +24,20 @@ This file serves as the **working memory** for all coding agents on the Heathcli
   - `get_chat_context()` retrieves relevant conversation history
   - `index_document()` for emails/files in my_data collection
 - **Audio Handler**: Complete STT/TTS/wake word pipeline in `core/audio_handler.py`
-  - Porcupine for wake word detection with PyAudio stream
+  - OpenWakeWord for wake word detection with PyAudio stream
   - Google Speech Recognition for STT
   - pyttsx3 for configurable TTS
   - `listen_loop()` orchestrates wake → listen → process → speak cycle
   - Background threading support with `start_background_listener()`
 
 ### Configuration Files
+
 - `.env.example`: Template for all required API keys
 - `config/config.py`: Runtime settings (wake word, TTS config, news sources, LLM params)
-- `requirements.txt`: All dependencies including langchain-google-genai, chromadb, pvporcupine, etc.
+- `requirements.txt`: All dependencies including langchain-google-genai, chromadb, openwakeword, etc.
 
 ### Project Structure
+
 ```
 heathcliff/
 ├── core/          # Foundation components (MemoryManager, AudioHandler)
@@ -46,6 +49,7 @@ heathcliff/
 ```
 
 ### LangChain Integration Notes
+
 - Using Gemini Flash 2.5 via `langchain-google-genai`
 - **CRITICAL API UPDATE (Dec 2025)**: Modern LangChain uses `langchain.agents.create_agent` NOT deprecated `AgentExecutor`
   - Import: `from langchain.agents import create_agent` (NOT `from langgraph.prebuilt import create_react_agent`)
@@ -67,23 +71,26 @@ heathcliff/
 ## Known Issues & Workarounds
 
 ### Phase 1 Implementation
+
 - **RESOLVED**: Conversation history persistence - now using ChromaDB with `save_chat()` method
 - Voice listener in separate thread - concurrent request handling not fully tested
 - Gmail, Calendar, Spotify rate limits - need backoff/retry logic implementation
-- Porcupine free tier false positive rate affects UX - consider paid tier for production
+- OpenWakeWord threshold (default 0.5) can be adjusted for sensitivity - use higher values to reduce false positives
 - API errors silent during voice interaction - difficult to debug without comprehensive logging
 - PyAudio setup is platform-dependent - test on target systems early (requires `sudo apt install python3-pyaudio` on Linux)
 
 ### Dependencies Installation Notes
+
 - Install system dependencies first: `sudo apt install python3-pyaudio` (Linux)
 - ChromaDB persistence directory defaults to `./chroma_db`
-- Porcupine access key optional for free tier (pass to AudioHandler constructor for paid tier)
+- OpenWakeWord downloads models automatically on first use; no API key required
 
 ---
 
 ## Discovered API Patterns
 
 ### ChromaDB
+
 - Collections auto-create on first access with `get_or_create_collection()`
 - Metadata filtering with `where` parameter in queries
 - IDs must be unique strings (using UUID + prefixes: `mem_`, `doc_`, etc.)
@@ -91,20 +98,28 @@ heathcliff/
 - Query returns dict with `documents`, `metadatas`, `distances`, `ids` keys
 
 ### Configuration Loading
+
 - `Config` is a singleton instance to avoid re-reading files
 - Class-based config values are accessed via attributes (example: `config.TEMPERATURE`)
 - Environment variables override config defaults at load time
 - Validation with `config.validate()` checks required API keys
 
 ### Audio Processing
-- PyAudio stream must match Porcupine sample rate (16000 Hz)
-- Wake word detection processes frame chunks (512 samples)
+
+- PyAudio stream must match OpenWakeWord sample rate (16000 Hz, 16-bit PCM)
+- Wake word detection processes frame chunks (1280 samples = 80ms recommended)
 - `adjust_for_ambient_noise()` essential before STT to reduce errors
 - TTS engine properties set once during initialization for performance
 
 ---
 
 ## Recent Agent Activity
+
+- **2025-12-30**: **MemoryManager Readability Tweaks** ✅
+  - Cached local Chroma PersistentClient in `_chroma_client` to reuse across instances.
+  - Normalized Mem0 recall results via helper methods and removed unreachable code path.
+  - Added `_empty_query_results()` for consistent empty responses.
+  - Switched session-clear error logging to `logger.warning` for consistency.
 
 - **2025-12-28**: **Mem0 Chroma Config Fix** ✅
   - Mem0 Chroma config expects `path` (or host/port) for local usage; `persist_directory` fails validation.
@@ -328,3 +343,17 @@ heathcliff/
   - Configured Gemini LLM + Gemini embeddings + Chroma Cloud via `config/config.py`.
   - Heathcliff now uses Mem0 SDK for memory add/search while chat/docs stay in Chroma Cloud.
   - Dockerfile + docker-compose now run `heathcliff` only.
+
+- **2025-12-29**: **Mem0 Extraction Gate + Delete Fix** ✅
+  - Memory extraction now only considers user messages and is gated by heuristic triggers to reduce noisy memories.
+  - Mem0 delete now uses `memory_id` keyword (per Mem0 docs) with fallback for older signatures.
+  - UI "Show All Memories" now uses Mem0 `get_all` adapter for consistent IDs and deletion.
+
+- **2026-01-03**: **Simplified tools/**init**.py exports** ✅
+  - Removed lazy map-based exports and **getattr** indirection.
+  - Switched to explicit imports + direct get_all_tools construction with same toolkit fallback warnings.
+
+- **2026-01-27**: **Removed Approval Handler System** ✅
+  - Deleted `core/approval_handler.py` (~200 lines).
+  - Cleaned `ui/Home.py`: removed imports, pending approval UI, and `StreamlitApprovalHandler` callback injection.
+  - Agent now invokes tools directly without human-in-the-loop approval gates.

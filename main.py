@@ -1,15 +1,13 @@
 # ABOUTME: Main entry point for Heathcliff voice assistant
 # ABOUTME: Orchestrates audio, agent, and memory components
 
+import signal
 import sys
 import uuid
-import signal
 
 from config import Config
-from core.memory_manager import MemoryManager, AgentMemoryError
-from core.audio_handler import AudioHandler
 from core.agent_core import HeathcliffAgent
-from tools import get_all_tools
+from core.audio_handler import AudioHandler
 from logger import logger
 
 
@@ -20,19 +18,14 @@ class HeathcliffAssistant:
         """Initialize all components."""
         logger.info("Starting Heathcliff Assistant...")
 
-        # Initialize memory manager
-        logger.info("Initializing memory manager...")
+        # Initialize agent (auto-creates memory manager and loads all tools)
+        logger.info("Initializing agent...")
         try:
-            self.memory = MemoryManager()
-        except AgentMemoryError as exc:
-            logger.error(str(exc))
-            print("Memory Not found, Heathcliff shutting down.")
+            self.agent = HeathcliffAgent.create()
+        except Exception as exc:
+            logger.error(f"Agent initialization failed: {exc}")
+            print("Agent initialization failed, Heathcliff shutting down.")
             sys.exit(1)
-
-        # Initialize agent with tools
-        logger.info("Initializing agent with tools...")
-        tools = get_all_tools()
-        self.agent = HeathcliffAgent(memory_manager=self.memory, tools=tools)
 
         # Initialize audio handler
         logger.info("Initializing audio handler...")
@@ -49,7 +42,6 @@ class HeathcliffAssistant:
 
         logger.info("Heathcliff Assistant initialized successfully!")
         logger.info(f"Agent: {self.agent}")
-        logger.info(f"Memory: {self.memory}")
         logger.info(f"Audio: {self.audio}")
 
     def _signal_handler(self, sig, frame):
@@ -135,8 +127,7 @@ def main():
                 print(f"Error: Invalid mode '{mode_value}'. Must be 'text' or 'voice'.")
                 sys.exit(1)
         elif arg in ["--help", "-h"]:
-            print(
-                """
+            print("""
 Heathcliff Voice Assistant
 
 Usage:
@@ -160,8 +151,7 @@ Text Mode:
     - Type your commands
     - Responses are printed to console
     - Useful for testing without audio hardware
-            """
-            )
+            """)
             sys.exit(0)
         else:
             print(f"Error: Unknown argument '{arg}'. Use --help for usage information.")

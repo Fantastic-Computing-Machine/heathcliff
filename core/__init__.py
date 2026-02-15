@@ -4,7 +4,7 @@
 from .agent_core import HeathcliffAgent
 from .memory_manager import MemoryManager
 
-# AudioHandler has optional dependencies (pyaudio, porcupine) that may not be installed
+# AudioHandler has optional dependencies (pyaudio, openwakeword) that may not be installed
 try:
     from .audio_handler import AudioHandler
 

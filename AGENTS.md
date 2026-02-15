@@ -1,47 +1,168 @@
-# Repository Guidelines
+# Repository Guidelines for AI Agents
 
-## Project Structure & Module Organization
+## Project Overview
 
-- `core/` contains LangGraph orchestration (`agent_core.py`), persistent memory (`memory_manager.py`), and audio helpers; keep agent nodes isolated and side-effect free.
-- Runtime knobs live in `config/config.py`; import the singleton `Config` from `config/__init__.py` so overrides flow consistently from `.env`.
-- `tools/`, `utils/`, `ui/`, and `voice/` encapsulate integrations, helpers, Streamlit UI, and wake-word assets, while mirrors of those modules sit under `tests/` for parity.
+Heathcliff is a voice-activated AI assistant built with Python 3.11+, using LangChain/LangGraph for orchestration and Gemini as the LLM backbone. Integrates with Gmail, Google Calendar, Spotify, Weather APIs, and more.
 
-## Architecture Snapshot
+## Project Structure
 
-- **Voice layer** (`voice/main.py`) owns wake-word detection (Porcupine) and Google STT; it runs in its own thread and invokes the agent callback on activation.
-- **Agent layer** (`agent.py`, `settings.py`) wires LangChain/Gemini, follows the ReAct pattern, and persists conversation context via LangGraph state.
-- **Tools layer** (`tools/gmail_tools.py`, `tools/calendar_tools.py`, `tools/spotify_tools.py`, `tools/alexa_tools.py`) encapsulates API-specific logic; expand these modules rather than inlining API calls elsewhere.
+```txt
+heathcliff/
+├── main.py              # Entry point (--text for text mode, default is voice)
+├── core/                # Agent orchestration and memory
+│   ├── agent_core.py    # HeathcliffAgent - Unified LangChain agent
+│   └── memory_manager.py # ChromaDB + Mem0 persistent memory
+├── config/              # Configuration (import Config from config/__init__.py)
+├── tools/               # API integrations (gmail, calendar, spotify, etc.)
+├── utils/               # Shared helpers (google_auth, retry, errors)
+├── ui/                  # Streamlit web dashboard
+├── voice/               # Wake-word detection (OpenWakeWord) and Google STT
+└── tests/               # pytest test suite
+```
 
-## Build, Test, and Development Commands
+## Build & Development Commands
 
-- Install uv if you don't have it (`curl -LsSf https://astral.sh/uv/install.sh | sh`), then run `uv sync` to create `.venv` and install deps from `pyproject.toml` / `uv.lock`.
-- `cp .env.example .env` then set `GEMINI_API_KEY` and OAuth secrets before running anything that touches Google or Spotify APIs.
-- `uv run python app.py` starts the wake-word driven voice loop using the active config; `Ctrl+C` shuts down gracefully and flushes logs. Use `uv run python main.py --text` for text-only mode.
-- `uv run pytest tests -v` runs the entire suite; filter with `-k <pattern>` for focused modules during iteration.
+```bash
+# Setup: Install uv, sync dependencies, configure environment
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+cp .env.example .env  # Set GEMINI_API_KEY and OAuth secrets
 
-## Coding Style & Naming Conventions
+# Running the application
+uv run python main.py           # Voice mode (wake-word activated)
+uv run python main.py --text    # Text-only mode
+uv run streamlit run ui/Home.py # Streamlit dashboard
 
-- Python 3 code uses 4-space indentation, type hints, and concise Google-style docstrings for public entry points.
-- Run `black .` (88-char default) and `isort .` before committing to keep diffs small; avoid manual formatting tweaks afterward.
-- Modules, files, and test names are snake_case, classes are PascalCase, and functions should be verb phrases that describe the side effect or return value.
+# Formatting (run before committing)
+black .                         # Code formatter (88-char line length)
+isort .                         # Import sorter
+```
+
+## Testing Commands
+
+```bash
+# Run entire test suite
+uv run pytest tests -v
+
+# Run single test file
+uv run pytest tests/test_memory_manager.py -v
+
+# Run single test class
+uv run pytest tests/test_memory_manager.py::TestAddMemory -v
+
+# Run single test function
+uv run pytest tests/test_memory_manager.py::TestAddMemory::test_add_memory_returns_id -v
+
+# Run tests matching a pattern
+uv run pytest tests -v -k "recall"
+
+# Run with stdout output
+uv run pytest tests -v -s
+```
+
+## Code Style Guidelines
+
+### Formatting
+
+- 4-space indentation
+- 88-character line length (black default)
+- Run `black .` and `isort .` before committing
+
+### Imports (3-section organization)
+
+```python
+# 1. Standard library
+import os
+from typing import Any, Dict, List, Optional
+
+# 2. Third-party
+from langchain.tools import tool
+import requests
+
+# 3. Local/project
+from config import Config
+from logger import logger
+```
+
+### Type Hints & Docstrings
+
+Use comprehensive type hints on all public APIs with Google-style docstrings:
+
+```python
+def add_memory(
+    self, text: str, category: str = "general", metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Store a long-term fact or preference.
+    Args:
+        text: The memory content
+        category: Category of memory (e.g., 'preference', 'fact')
+    Returns:
+        ID of the stored memory
+    """
+```
+
+### Naming Conventions
+
+| Element      | Convention          | Example                          |
+|--------------|---------------------|----------------------------------|
+| Modules      | snake_case          | `memory_manager.py`              |
+| Classes      | PascalCase          | `HeathcliffAgent`                |
+| Functions    | snake_case verbs    | `get_calendar_events()`          |
+| Constants    | UPPER_SNAKE_CASE    | `GMAIL_SCOPES`                   |
+| Private      | `_` prefix          | `_global_chroma_client`          |
+
+### Module Headers
+
+Every file should start with ABOUTME comments:
+
+```python
+# ABOUTME: Gmail integration using LangChain's GmailToolkit
+# ABOUTME: Uses draft creation for safety instead of direct sending
+```
+
+### Error Handling
+
+Use custom exceptions from `utils/errors.py`. Catch specific exceptions, log with context:
+
+```python
+from utils.errors import AgentMemoryError, ToolExecutionError
+
+try:
+    result = risky_operation()
+except SpecificError as e:
+    logger.error(f"Operation failed: {e}", exc_info=True)
+    raise AgentMemoryError(f"Memory operation failed: {e}")
+```
+
+### Logging
+
+Import the centralized logger (`from logger import logger`) and use appropriate levels:
+
+- `logger.debug()` for verbose details, `logger.info()` for normal operations
+- `logger.warning()` for recoverable issues, `logger.error(..., exc_info=True)` for errors
 
 ## Testing Guidelines
 
-- Pytest discovers files as `tests/test_*.py`, classes `Test*`, and functions `test_*` per `pytest.ini`; stick with that template when adding suites.
-- Place fast unit tests next to their subject (`test_memory_manager.py`), and extend integration/E2E flows (`test_agent_integration.py`, `test_agent_e2e.py`) when adding cross-service behavior.
-- Mock Gmail/Calendar/Spotify clients plus ChromaDB in tests to keep runs deterministic and CI-friendly; record expected prompts/responses as fixtures.
+- Mock external clients (Gmail, Calendar, Spotify, ChromaDB) for deterministic tests
+- Use fixtures from `tests/conftest.py` (DummyMem0, DummyConfig, config_factory)
+- Place unit tests alongside their subject (`test_memory_manager.py` for `memory_manager.py`)
+- Extend `test_agent_integration.py` or `test_agent_e2e.py` for cross-service behavior
 
-## Commit & Pull Request Guidelines
+## Architecture Notes
 
-- Follow the existing history by writing imperative, descriptive subjects (`Add Gmail sync tool scaffolding`) and optional body bullets for context.
-- Mention config or dependency changes explicitly, link tracking issues, and include screenshots or transcripts when UI or audio behavior changes.
-- Before requesting review, ensure formatters and `python -m pytest tests -v` pass, and summarize that verification plus manual steps in the PR description.
+- **Voice layer** (`voice/main.py`): Wake-word detection (OpenWakeWord) and Google STT, runs in its own thread
+- **Agent layer** (`core/agent_core.py`): LangChain/Gemini with `create_agent` framework, persists context via LangGraph
+- **Tools layer** (`tools/`): API-specific logic; expand these modules rather than inlining API calls
 
-## Agent Coordination & Knowledge Base
+## Commit Guidelines
 
-- Read `plan/MEMORY.md` before starting work and append new discoveries (APIs, bugs, design choices) after finishing so concurrent agents stay synchronized.
-- Keep `plan/TODO.md` in sync by checking off items as you progress; treat it as the live source of truth for task ownership.
-- Centralize repeatable helpers inside `utils/` to avoid divergence between agents; reference prior approaches recorded in memory before re-implementing tooling.
-- refer plan/TODO.md and plan/EXECUTION.md simultaneously
+- Write imperative, descriptive subjects: `Add Gmail sync tool scaffolding`
+- Mention config or dependency changes explicitly
+- Ensure `black .`, `isort .`, and `uv run pytest tests -v` pass before committing
 
-<REMEMBER>Always use web.fetch and web.search when discussing and planning<REMEMBER>
+## Agent Coordination
+
+- Read `plan/MEMORY.md` before starting work; append discoveries after finishing
+- Keep `plan/TODO.md` in sync; treat it as the source of truth for task ownership
+- Refer to `plan/TODO.md` and `plan/EXECUTION.md` simultaneously
+- Centralize reusable helpers in `utils/` to avoid duplication

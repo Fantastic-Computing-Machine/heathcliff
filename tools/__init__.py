@@ -9,7 +9,9 @@ from tools.comm_tools import get_comm_tools
 from tools.drive_tools import get_drive_tools
 from tools.gmail_tools import get_gmail_toolkit_tools
 from tools.info_tools import get_info_tools
+from tools.math_tools import math_evaluator
 from tools.people_tools import get_people_tools
+from tools.search_graph_tool import search_and_scrape
 from tools.spotify_tool import get_spotify_tools
 
 __all__ = [
@@ -72,6 +74,7 @@ def get_all_tools() -> List[Any]:
             get_info_tools(),
             get_comm_tools(),
             get_people_tools(),
+            [math_evaluator, search_and_scrape],
         ]
     )
 
