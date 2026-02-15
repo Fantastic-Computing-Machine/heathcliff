@@ -50,7 +50,9 @@ def _search_gdrive_files(query: str) -> str:
         if "contains" in query or "=" in query:
             q = query
         else:
-            q = f"name contains '{query}'"
+            # Escape single quotes to prevent injection/malformed queries
+            safe_query = query.replace("'", "\\'")
+            q = f"name contains '{safe_query}'"
 
         q += " and trashed = false"
 

@@ -75,7 +75,10 @@ class StatusCallbackHandler(BaseCallbackHandler):
                 if isinstance(parsed, dict):
                     params = ", ".join(f"{k}={v}" for k, v in list(parsed.items())[:3])
                     self.status_container.write(f"   → Parameters: {params}")
-            except:
+            except (json.JSONDecodeError, TypeError):
+                pass
+            except Exception as e:
+                # Catch other unexpected errors but don't crash
                 pass
 
     def on_tool_end(self, output: str, **kwargs: Any) -> None:

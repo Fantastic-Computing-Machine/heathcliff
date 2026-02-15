@@ -12,9 +12,9 @@ import speech_recognition as sr
 from openwakeword.model import Model as WakeWordModel
 
 from config import Config
+from logger import logger
 
-# Download models on first import (one-time operation)
-openwakeword.utils.download_models()
+# Models will be downloaded on initialization if needed
 
 
 class AudioHandler:
@@ -80,9 +80,30 @@ class AudioHandler:
     def _init_openwakeword(self):
         """Initialize OpenWakeWord wake word detector."""
         try:
+            # Ensure models are available (lazy download)
+            openwakeword.utils.download_models()
+
+            # Validate wake word model and fallback if needed
+            model_paths = openwakeword.get_pretrained_model_paths() or {}
+            available_models = (
+                list(model_paths)
+                if isinstance(model_paths, dict)
+                else list(model_paths)
+            )
+            wake_word_model = self.wake_word
+            if (
+                wake_word_model not in available_models
+                and f"{wake_word_model}.onnx" not in available_models
+            ):
+                logger.warning(
+                    "Wake word '%s' not found in available OpenWakeWord models; falling back to 'hey_jarvis'",
+                    wake_word_model,
+                )
+                wake_word_model = "hey_jarvis"
+
             # Load the wake word model
             self.oww_model = WakeWordModel(
-                wakeword_models=[self.wake_word],
+                wakeword_models=[wake_word_model],
                 inference_framework="onnx",
             )
 

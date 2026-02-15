@@ -1,14 +1,10 @@
 # ABOUTME: Google OAuth2 authentication utilities for Gmail, Calendar, and Drive APIs
 # ABOUTME: Handles credential loading, token refresh, and scope management
-import sys
-
-sys.path.append(".")
-
 import json
 import os
 import warnings
 from threading import Lock
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Suppress DeprecationWarnings from httplib2 (used by google-auth) which uses deprecated pyparsing methods
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="httplib2")
@@ -17,10 +13,12 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-from logger import logger
+from config import Config
 
 _cache_lock = Lock()
-_credential_cache: Dict[Tuple, Credentials] = {}
+_credential_cache: Dict[Tuple, Any] = {}
+
+TOKEN_FILE_DEFAULT = Config.GOOGLE_TOKEN_FILE_PATH
 
 
 def _cache_key(
@@ -35,7 +33,7 @@ def _cache_key(
     return (normalized_scopes, token_file, resolved_credentials_file)
 
 
-def _load_from_disk(token_file: str) -> Optional[Credentials]:
+def _load_from_disk(token_file: str) -> Optional[Any]:
     """Load credentials from disk if the token file exists."""
 
     if os.path.exists(token_file):
@@ -52,7 +50,7 @@ def _load_from_disk(token_file: str) -> Optional[Credentials]:
     return None
 
 
-def _save_to_disk(creds: Credentials, token_file: str) -> None:
+def _save_to_disk(creds: Any, token_file: str) -> None:
     """Save credentials to disk as JSON."""
 
     data = {
@@ -67,19 +65,15 @@ def _save_to_disk(creds: Credentials, token_file: str) -> None:
         json.dump(data, token, indent=2)
 
 
-TOKEN_FILE_DEFAULT = "keys/token.json"
-
-
 def get_google_credentials(
     scopes: List[str],
     credentials_file: Optional[str] = None,
-) -> Credentials:
+) -> Any:
     """
     Get or create Google OAuth2 credentials with specified scopes.
 
     Args:
         scopes: List of OAuth2 scopes required
-        token_file: Path to store/load the token JSON file
         credentials_file: Path to credentials.json (if None, uses GOOGLE_APPLICATION_CREDENTIALS env var)
 
     Returns:
@@ -118,7 +112,7 @@ def get_google_credentials(
 
             # Use run_local_server with open_browser=False for headless/CLI environments.
             # This prints the auth URL to console for manual browser access.
-            creds = flow.run_local_server(port=6969, open_browser=False)
+            creds = flow.run_local_server(port=0, open_browser=False)
 
             _save_to_disk(creds, TOKEN_FILE_DEFAULT)
 

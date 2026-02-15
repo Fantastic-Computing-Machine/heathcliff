@@ -1,9 +1,5 @@
 # ABOUTME: Simplified agent orchestrator using LangChain's unified agent framework
 # ABOUTME: Replaces custom LangGraph StateGraph with built-in agent framework
-import sys
-
-sys.path.append(".")
-
 import os
 import uuid
 from typing import Any, Dict, List, Optional
@@ -13,7 +9,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from config import Config
-from core.memory_manager import MemoryManager
 from core.middlewares.built_in import BuiltInMiddlewares
 from instructions.prompts import build_system_prompt, build_user_context
 from logger import logger
@@ -61,9 +56,13 @@ class HeathcliffAgent:
         """
 
         # Auto-initialize memory if not provided
-        self.memory_manager = (
-            memory_manager if memory_manager is not None else MemoryManager()
-        )
+        if memory_manager is not None:
+            self.memory_manager = memory_manager
+        else:
+            # Import lazily so tests can patch core.memory_manager.MemoryManager
+            from core.memory_manager import MemoryManager  # type: ignore
+
+            self.memory_manager = MemoryManager()
 
         # Keep original LangChain Tool objects for structured calling
         # NOTE: LangChain's create_agent expects iterable BaseTool objects, not a
@@ -265,6 +264,28 @@ class HeathcliffAgent:
 
         # Extract response from final message
         final_messages = result.get("messages", [])
+
+        # Log actual tool calls for observability (helps debug hallucinated actions)
+        if isinstance(final_messages, list):
+            for msg in final_messages:
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    tool_calls = (
+                        msg.tool_calls if isinstance(msg.tool_calls, list) else []
+                    )
+                    for tc in tool_calls:
+                        logger.info(
+                            "Tool called: %s (args: %s)",
+                            tc.get("name", "unknown"),
+                            tc.get("args", {}),
+                        )
+                if hasattr(msg, "name") and hasattr(msg, "content") and msg.name:
+                    # ToolMessage — result returned from a tool execution
+                    logger.info(
+                        "Tool result [%s]: %s",
+                        msg.name,
+                        str(msg.content)[:200],
+                    )
+
         if final_messages:
             last_message = final_messages[-1]
             content = last_message.content

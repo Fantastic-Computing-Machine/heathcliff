@@ -9,9 +9,6 @@ import pyaudio
 import speech_recognition as sr
 from openwakeword.model import Model as WakeWordModel
 
-# Download models on first import (one-time operation)
-openwakeword.utils.download_models()
-
 
 class VoiceListener:
     """Voice listener with OpenWakeWord wake word detection."""
@@ -38,8 +35,23 @@ class VoiceListener:
 
     def start(self):
         """Start the voice listener."""
+        # Ensure models are available lazily
+        openwakeword.utils.download_models()
+
+        # Validate wake word; fallback to a known model if missing
+        model_paths = openwakeword.get_pretrained_model_paths() or {}
+        available_models = (
+            list(model_paths) if isinstance(model_paths, dict) else list(model_paths)
+        )
+        wake_word_model = self.wake_word
+        if (
+            wake_word_model not in available_models
+            and f"{wake_word_model}.onnx" not in available_models
+        ):
+            wake_word_model = "hey_jarvis"
+
         self.oww_model = WakeWordModel(
-            wakeword_models=[self.wake_word],
+            wakeword_models=[wake_word_model],
             inference_framework="onnx",
         )
         self.pa = pyaudio.PyAudio()

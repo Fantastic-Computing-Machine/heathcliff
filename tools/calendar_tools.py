@@ -5,7 +5,6 @@ from typing import Any, List
 
 from googleapiclient.discovery import build
 from langchain_google_community.calendar.create_event import CalendarCreateEvent
-from langchain_google_community.calendar.current_datetime import GetCurrentDatetime
 from langchain_google_community.calendar.delete_event import CalendarDeleteEvent
 from langchain_google_community.calendar.get_calendars_info import GetCalendarsInfo
 from langchain_google_community.calendar.move_event import CalendarMoveEvent

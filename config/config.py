@@ -10,6 +10,9 @@ from logger import logger
 
 load_dotenv(".env")
 
+if not os.path.exists("keys"):
+    os.makedirs("keys")
+
 
 class MasterConf:
     MASTER_INFO = MASTER_INFO
@@ -83,9 +86,12 @@ class PlatformConf:
     # Google / Gemini API Keys
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-    GOOGLE_APPLICATION_CREDENTIALS = "keys/" + os.getenv(
-        "GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"
+    _creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "credentials.json")
+    GOOGLE_APPLICATION_CREDENTIALS = (
+        _creds_path if os.path.isabs(_creds_path) else os.path.join("keys", _creds_path)
     )
+    GOOGLE_TOKEN_FILE_PATH = os.path.join("keys", "token.json")
+
     # Google Search
     GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
     GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
@@ -93,6 +99,7 @@ class PlatformConf:
     # Spotify API Credentials
     SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
     SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+    SPOTIFY_CACHE_PATH = os.path.join("keys", ".cache")
 
     # Messaging Platform Tokens
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

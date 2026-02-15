@@ -1,9 +1,11 @@
 # ABOUTME: Master profile information used to personalize Heathcliff responses
 
+import os
+
 MASTER_INFO = {
     "name": "Adi",
-    "email": "aditya.ag1234@gmail.com",
-    "linkedin": "https://www.linkedin.com/in/adityaagarwal1999/",
+    "email": os.getenv("MASTER_EMAIL", "adiagarwal1509@gmail.com"),
+    "linkedin": os.getenv("MASTER_LINKEDIN", ""),
     "github": "https://github.com/adiagarwalrock",
     "twitter": "https://x.com/strike_ag",
     "instagram": "",
@@ -40,18 +42,18 @@ MASTER_INFO = {
         "bachelors": {
             "degree": "B.Tech",
             "branch": "Computer Science",
-            "college": "Alliance University, Bangalore",
-            "graduation": "August 2017 - July2021",
+            "college": "Alliance University",
+            "graduation": "2017 - 2021",
         },
         "masters": {
             "degree": "M.S.",
             "branch": "Computer Science",
             "college": "Stevens Institute of Technology",
-            "graduation": "August 2022 - April 2024",
+            "graduation": "2022 - 2024",
         },
     },
     "location": {
-        "birth": "Agra, Uttar Pradesh, India",
-        "current": "Jersey City, New Jersey, USA",
+        "birth": "India",
+        "current": "Jersey City, NJ, USA",
     },
 }

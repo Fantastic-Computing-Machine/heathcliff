@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import inspect
+import ipaddress
 import json
 import os
+import socket
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 import wikipedia
@@ -17,6 +20,44 @@ from playwright.sync_api import sync_playwright
 
 from config import Config
 from logger import logger
+
+
+def _is_safe_url(url: str) -> bool:
+    """
+    Validate URL to prevent SSRF (Server-Side Request Forgery).
+    Blocks local/private IP ranges and non-http schemes.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        # Resolve hostname to IP
+        try:
+            ip_str = socket.gethostbyname(hostname)
+            ip = ipaddress.ip_address(ip_str)
+        except (socket.gaierror, ValueError):
+            # If we can't resolve it, it might be an internal name or invalid
+            return False
+
+        # Check for private/loopback/link-local
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+        ):
+            return False
+
+        return True
+    except Exception:
+        return False
+
 
 _google_tool: Optional[Any] = None
 _duck_tool: Optional[Any] = None
@@ -511,6 +552,12 @@ def fetch_dynamic_webpage(
         Full rendered page text - YOU extract and format the data from this
     """
     try:
+        if not _is_safe_url(url):
+            logger.warning(f"Blocked unsafe URL fetch attempt: {url}")
+            return (
+                "Error: URL is restricted (local/private IPs not allowed) or invalid."
+            )
+
         logger.info(f"Launching browser to fetch: {url}")
 
         with sync_playwright() as p:
@@ -539,7 +586,11 @@ def fetch_dynamic_webpage(
             browser.close()
 
         # Parse with BeautifulSoup
-        soup = BeautifulSoup(content, "lxml")
+        # Try lxml first, fallback to html.parser if lxml is missing
+        try:
+            soup = BeautifulSoup(content, "lxml")
+        except Exception:
+            soup = BeautifulSoup(content, "html.parser")
 
         # Remove script and style elements
         for script in soup(["script", "style", "nav", "footer", "header"]):

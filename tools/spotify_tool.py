@@ -14,7 +14,7 @@ _spotify_client: Optional[spotipy.Spotify] = None
 
 from spotipy.oauth2 import CacheFileHandler
 
-SPOTIFY_CACHE_PATH = "keys/.spotify_cache"
+SPOTIFY_CACHE_PATH = Config.SPOTIFY_CACHE_PATH
 
 
 def _get_spotify_client() -> spotipy.Spotify:
@@ -41,7 +41,6 @@ def _get_spotify_client() -> spotipy.Spotify:
             client_secret=Config.SPOTIFY_CLIENT_SECRET,
             redirect_uri="http://127.0.0.1:8100/callback",
             scope="user-modify-playback-state user-read-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative",
-            # cache_path=SPOTIFY_CACHE_PATH,
             cache_handler=CacheFileHandler(cache_path=SPOTIFY_CACHE_PATH),
             open_browser=False,
         )
@@ -134,13 +133,15 @@ def play_track(query: str) -> str:
 
         # Search for track
         logger.debug("Calling Spotify search API")
-        results = sp.search(q=query, type="track", limit=1)
+        results = sp.search(q=query, type="track", limit=1) or {}
+        tracks = results.get("tracks") if isinstance(results, dict) else None
+        items = tracks.get("items") if tracks else []
 
-        if not results["tracks"]["items"]:
+        if not items:
             logger.warning(f"No tracks found for query: {query}")
             return f"No tracks found for: {query}"
 
-        track = results["tracks"]["items"][0]
+        track = items[0]
         track_uri = track["uri"]
         track_name = track["name"]
         artist_name = track["artists"][0]["name"]

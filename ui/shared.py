@@ -5,12 +5,9 @@ import os
 import sys
 import uuid
 from datetime import datetime
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import streamlit as st
-
-# Ensure project root is in path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 from core.agent_core import HeathcliffAgent
@@ -33,11 +30,11 @@ def get_memory_manager() -> MemoryManager:
     except Exception as e:
         logger.error(f"Error initializing MemoryManager: {e}")
         st.error(f"Failed to initialize Memory Database: {e}")
-        raise e
+        raise
 
 
 @st.cache_resource(show_spinner="Initializing Heathcliff...")
-def get_agent(_memory_manager: MemoryManager = None) -> HeathcliffAgent:
+def get_agent(_memory_manager: Optional[MemoryManager] = None) -> HeathcliffAgent:
     """
     Get or initialize the HeathcliffAgent singleton.
     Cached resource shared across all pages.
@@ -53,7 +50,7 @@ def get_agent(_memory_manager: MemoryManager = None) -> HeathcliffAgent:
     except Exception as e:
         logger.error(f"Error initializing HeathcliffAgent: {e}")
         st.error(f"Failed to initialize Agent: {e}")
-        raise e
+        raise
 
 
 def init_session_state():

@@ -46,6 +46,9 @@ COPY . .
 # Install the project itself (if needed, or just rely on deps)
 RUN uv sync --frozen --no-dev
 
+# Install Playwright browsers for dynamic web fetching
+RUN uv run playwright install --with-deps chromium
+
 # Streamlit specific configuration
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ENV STREAMLIT_SERVER_PORT=8501

@@ -6,17 +6,17 @@ Heathcliff is a voice-activated AI assistant built with Python 3.11+, using Lang
 
 ## Project Structure
 
-```
+```txt
 heathcliff/
 ├── main.py              # Entry point (--text for text mode, default is voice)
 ├── core/                # Agent orchestration and memory
-│   ├── agent_core.py    # HeathcliffAgent - LangGraph orchestrator
+│   ├── agent_core.py    # HeathcliffAgent - Unified LangChain agent
 │   └── memory_manager.py # ChromaDB + Mem0 persistent memory
 ├── config/              # Configuration (import Config from config/__init__.py)
 ├── tools/               # API integrations (gmail, calendar, spotify, etc.)
 ├── utils/               # Shared helpers (google_auth, retry, errors)
 ├── ui/                  # Streamlit web dashboard
-├── voice/               # Wake-word detection (Porcupine) and Google STT
+├── voice/               # Wake-word detection (OpenWakeWord) and Google STT
 └── tests/               # pytest test suite
 ```
 
@@ -150,8 +150,8 @@ Import the centralized logger (`from logger import logger`) and use appropriate 
 
 ## Architecture Notes
 
-- **Voice layer** (`voice/main.py`): Wake-word detection and Google STT, runs in its own thread
-- **Agent layer** (`core/agent_core.py`): LangChain/Gemini with ReAct pattern, persists context via LangGraph
+- **Voice layer** (`voice/main.py`): Wake-word detection (OpenWakeWord) and Google STT, runs in its own thread
+- **Agent layer** (`core/agent_core.py`): LangChain/Gemini with `create_agent` framework, persists context via LangGraph
 - **Tools layer** (`tools/`): API-specific logic; expand these modules rather than inlining API calls
 
 ## Commit Guidelines

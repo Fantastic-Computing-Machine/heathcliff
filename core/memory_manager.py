@@ -475,43 +475,62 @@ class MemoryManager:
         all_messages.sort(key=_sort_key)
         return all_messages
 
-    def get_all_sessions(self) -> List[Dict[str, Any]]:
+    def get_all_sessions(
+        self, limit: int = 100, offset: int = 0
+    ) -> List[Dict[str, Any]]:
         """
         Retrieve all distinct chat sessions with metadata.
+
+        Args:
+            limit: Maximum number of records to fetch per batch
+            offset: Starting offset for pagination (unused here as we scan all, but kept for API compat)
 
         Returns:
             List of session dictionaries with id, start/end time, and message count
         """
         try:
-            # Fetch all metadata to aggregate sessions
-            # We explicitly don't fetch embeddings or documents to save bandwidth/memory
-            result = self.chats.get(include=["metadatas"])
-            metadatas = result.get("metadatas", [])
-
             sessions = {}
-            for meta in metadatas:
-                if not meta:
-                    continue
-                sess_id = meta.get("session")
-                if not sess_id:
-                    continue
+            batch_size = limit
+            current_offset = 0
 
-                timestamp = meta.get("timestamp", "")
+            while True:
+                # Fetch metadata in batches to avoid OOM
+                result = self.chats.get(
+                    include=["metadatas"], limit=batch_size, offset=current_offset
+                )
+                metadatas = result.get("metadatas", [])
 
-                if sess_id not in sessions:
-                    sessions[sess_id] = {
-                        "session_id": sess_id,
-                        "start_time": timestamp,
-                        "end_time": timestamp,
-                        "msg_count": 0,
-                    }
+                if not metadatas:
+                    break
 
-                s = sessions[sess_id]
-                s["msg_count"] += 1
-                if timestamp and timestamp < s["start_time"]:
-                    s["start_time"] = timestamp
-                if timestamp and timestamp > s["end_time"]:
-                    s["end_time"] = timestamp
+                for meta in metadatas:
+                    if not meta:
+                        continue
+                    sess_id = meta.get("session")
+                    if not sess_id:
+                        continue
+
+                    timestamp = meta.get("timestamp", "")
+
+                    if sess_id not in sessions:
+                        sessions[sess_id] = {
+                            "session_id": sess_id,
+                            "start_time": timestamp,
+                            "end_time": timestamp,
+                            "msg_count": 0,
+                        }
+
+                    s = sessions[sess_id]
+                    s["msg_count"] += 1
+                    if timestamp and timestamp < s["start_time"]:
+                        s["start_time"] = timestamp
+                    if timestamp and timestamp > s["end_time"]:
+                        s["end_time"] = timestamp
+
+                if len(metadatas) < batch_size:
+                    break
+
+                current_offset += batch_size
 
             return sorted(
                 list(sessions.values()), key=lambda x: x["end_time"], reverse=True

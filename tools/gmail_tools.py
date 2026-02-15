@@ -122,9 +122,7 @@ def get_gmail_toolkit_tools() -> List[Any]:
     # Filter out 'send_message' or similar dangerous tools
     # And 'create_draft' because we provide our own wrapper with validation/safety prompts
     safe_tools = [
-        t
-        for t in all_tools
-        if "send_message" not in t.name and "create_draft" not in t.name
+        t for t in all_tools if "send" not in t.name and "create_draft" not in t.name
     ]
 
     # Add our custom draft tool
