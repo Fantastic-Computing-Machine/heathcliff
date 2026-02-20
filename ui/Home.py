@@ -184,10 +184,14 @@ if is_approval_pending(st.session_state):
                     st.session_state["show_modify_form"] = False
                     st.rerun()
 
-my_greeting = generate_greeting(user_name="Adi", include_weather=True)
+if "my_greeting" not in st.session_state:
+    st.session_state.my_greeting = generate_greeting(
+        user_name="Adi", include_weather=True
+    )
+
 # Chat input
 if chat_input_message := st.chat_input(
-    placeholder=str(my_greeting),
+    placeholder=str(st.session_state.my_greeting),
     accept_file=True,
     accept_audio=True,
     file_type=["jpg", "jpeg", "png"],

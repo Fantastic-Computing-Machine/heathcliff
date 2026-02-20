@@ -21,8 +21,6 @@ from utils.langfuse_client import (
 from core.middleware import create_middleware_stack
 from config import Config
 
-_instance: Optional["HeathcliffAgent"] = None
-
 
 class HeathcliffAgent:
     """
@@ -93,8 +91,7 @@ class HeathcliffAgent:
         memory_manager=None,
         extra_tools: Optional[List[Any]] = None,
     ):
-        """
-        Initialise the Heathcliff supervisor agent.
+        """Initialise the Heathcliff supervisor agent.
 
         Args:
             memory_manager: MemoryManager instance. Required on first call;
@@ -102,7 +99,6 @@ class HeathcliffAgent:
             extra_tools: Optional list of additional BaseTool objects to
                          append to the default subagent + skill tools.
         """
-        # Guard: already initialised — skip re-init
         if getattr(self, "_initialised", False):
             return
         self._initialised = True
@@ -110,25 +106,23 @@ class HeathcliffAgent:
         self.memory_manager = memory_manager
 
         # Assemble tools: defaults + any caller-supplied extensions
-        default_tools = self._assemble_default_tools()
-        extension = list(extra_tools) if extra_tools else []
-        self._tools: List[Any] = default_tools + extension
+        self._tools: List[Any] = self._assemble_default_tools() + list(
+            extra_tools or []
+        )
 
         self.max_iterations = Config.MAX_ITERATIONS
         self.callbacks: List[Any] = []
 
-        # Langfuse callback
         langfuse_handler = get_langfuse_callback_handler()
         if langfuse_handler:
             self.callbacks.append(langfuse_handler)
             logger.info("Langfuse callback handler enabled")
         else:
             logger.info(
-                "Langfuse callback handler unavailable; falling back to manual trace events only"
+                "Langfuse callback handler unavailable; "
+                "falling back to manual trace events only"
             )
 
-        # Middleware
-        self.middleware_stack: List[Any] = []
         self.llm = ChatGoogleGenerativeAI(
             model=Config.MODEL,
             google_api_key=Config.GEMINI_API_KEY,
@@ -163,43 +157,63 @@ class HeathcliffAgent:
             tools=self._tools,
             system_prompt=self.prompt,
         )
-        logger.info(
-            f"Supervisor built with tools: {[getattr(t, 'name', str(t)) for t in self._tools]}"
-        )
+        tool_names = [getattr(t, "name", str(t)) for t in self._tools]
+        logger.info("Supervisor built with tools: %s", tool_names)
         return agent_graph
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    _ROLE_TO_MSG = {
+        "user": HumanMessage,
+        "assistant": AIMessage,
+    }
+
+    @staticmethod
+    def _extract_memories(memories_results: Optional[Dict[str, Any]]) -> List[str]:
+        """Pull flat list of memory strings from a ChromaDB query result."""
+        if not memories_results:
+            return []
+        docs = memories_results.get("documents") or []
+        return list(docs[0]) if docs else []
+
+    @staticmethod
+    def _extract_gemini_content(content) -> str:
+        """Normalise Gemini's structured response to a plain string."""
+        if isinstance(content, list):
+            return "".join(
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            )
+        return str(content) if content else ""
 
     def _format_chat_history(
         self, context_messages: List[Dict[str, Any]], memories: List[str]
     ) -> List:
         """Format memories and context as chat history for the agent."""
-        chat_history = []
+        chat_history: list = []
 
-        # Add memories as a system message
         if memories:
             memories_str = "\n".join(f"- {m}" for m in memories)
             chat_history.append(
                 SystemMessage(content=f"Long-term memories:\n{memories_str}")
             )
 
-        # Add recent conversation context (chronologically ordered)
-        if context_messages:
-            for msg in context_messages:
-                role = msg.get("role", "unknown")
-                content = msg.get("content", "")
+        for msg in context_messages:
+            msg_cls = self._ROLE_TO_MSG.get(msg.get("role"))
+            if msg_cls:
+                chat_history.append(msg_cls(content=msg.get("content", "")))
 
-                if role == "user":
-                    chat_history.append(HumanMessage(content=content))
-                elif role == "assistant":
-                    chat_history.append(AIMessage(content=content))
-
-        # Add critical instruction to focus on current query
-        # This prevents the agent from picking tools based on previous queries
-        if chat_history:  # Only add if there's context
+        # Prevent the agent from picking tools based on previous queries
+        if chat_history:
             chat_history.append(
                 SystemMessage(
                     content="IMPORTANT: Focus ONLY on the user's CURRENT query. "
-                    "The above messages are for context only. Do NOT use tools or take actions "
-                    "based on previous queries - only respond to what the user just asked."
+                    "The above messages are for context only. Do NOT use tools or "
+                    "take actions based on previous queries - only respond to what "
+                    "the user just asked."
                 )
             )
 
@@ -235,28 +249,16 @@ class HeathcliffAgent:
         if not session_id:
             session_id = str(uuid.uuid4())
 
-        logger.info(f"Processing input: '{user_input[:50]}...' session: {session_id}")
+        logger.info("Processing input: '%.50s...' session: %s", user_input, session_id)
 
         try:
-            # Get context from memory manager
-            # Use chronological retrieval instead of semantic search
-            # to prevent picking up old tool calls from similar queries
-            # REDUCED from n=5 to n=2 to avoid context confusion where agent
-            # picks tools for previous queries instead of current query
+            # Chronological retrieval (n=2) to avoid context bleed
             context_messages = self.memory_manager.get_recent_chats(
                 session_id=session_id, n=2
             )
-            memories_results = self.memory_manager.recall(query=user_input, n=3)
-
-            # Extract memories
-            memories = []
-            if memories_results and memories_results.get("documents"):
-                docs = (
-                    memories_results["documents"][0]
-                    if memories_results["documents"]
-                    else []
-                )
-                memories = list(docs)
+            memories = self._extract_memories(
+                self.memory_manager.recall(query=user_input, n=3)
+            )
 
             # Format chat history as messages
             chat_history = self._format_chat_history(context_messages, memories)
@@ -277,32 +279,16 @@ class HeathcliffAgent:
 
             # Extract response from final message
             final_messages = result.get("messages", [])
-            if final_messages:
-                # Last message should be the assistant's response
-                last_message = final_messages[-1]
-                content = last_message.content
-
-                # Handle Gemini's structured content format
-                if isinstance(content, list):
-                    # Extract text from [{'type': 'text', 'text': '...'}] format
-                    text_parts = [
-                        part.get("text", "")
-                        for part in content
-                        if isinstance(part, dict) and part.get("type") == "text"
-                    ]
-                    response = "".join(text_parts)
-                else:
-                    response = str(content) if content else ""
-            else:
-                response = ""
-
-            if not response:
-                response = "I encountered an error processing your request."
+            response = (
+                self._extract_gemini_content(final_messages[-1].content)
+                if final_messages
+                else ""
+            ) or "I encountered an error processing your request."
 
             # Save to memory
             self.memory_manager.save_chat(user_input, response, session_id)
 
-            logger.info(f"Response: '{response[:50]}...'")
+            logger.info("Response: '%.50s...'", response)
             log_langfuse_interaction(
                 session_id=session_id,
                 user_input=user_input,
@@ -312,13 +298,12 @@ class HeathcliffAgent:
 
             return response
 
+        except AgentMemoryError:
+            error_message = "Memory Not found, Heathcliff shutting down."
+            logger.error(error_message)
+            return error_message
         except Exception as e:
-            if isinstance(e, AgentMemoryError):
-                error_message = "Memory Not found, Heathcliff shutting down."
-                logger.error(error_message)
-                return error_message
-
-            logger.error(f"Agent invocation failed: {e}", exc_info=True)
+            logger.error("Agent invocation failed: %s", e, exc_info=True)
             error_message = (
                 "I encountered an error processing your request. Please try again."
             )
@@ -374,53 +359,38 @@ class HeathcliffAgent:
         if not session_id:
             session_id = str(uuid.uuid4())
 
-        logger.info(f"Streaming input: '{user_input[:50]}...' session: {session_id}")
+        logger.info("Streaming input: '%.50s...' session: %s", user_input, session_id)
 
         try:
-            # Get context from memory manager
             yield {
                 "type": "status",
                 "message": "Retrieving memories and context...",
                 "data": {"phase": "retrieval"},
             }
 
-            # Use chronological retrieval instead of semantic search
-            # to prevent picking up old tool calls from similar queries
-            # REDUCED from n=5 to n=2 to avoid context confusion where agent
-            # picks tools for previous queries instead of current query
+            # Chronological retrieval (n=2) to avoid context bleed
             context_messages = self.memory_manager.get_recent_chats(
                 session_id=session_id, n=2
             )
-            memories_results = self.memory_manager.recall(query=user_input, n=3)
-
-            # Extract memories
-            memories = []
-            if memories_results and memories_results.get("documents"):
-                docs = (
-                    memories_results["documents"][0]
-                    if memories_results["documents"]
-                    else []
-                )
-                memories = list(docs)
-
-            memories_count = len(memories)
+            memories = self._extract_memories(
+                self.memory_manager.recall(query=user_input, n=3)
+            )
 
             yield {
                 "type": "status",
-                "message": f"Retrieved {memories_count} memories",
-                "data": {"phase": "retrieval_complete", "memories": memories_count},
+                "message": f"Retrieved {len(memories)} memories",
+                "data": {"phase": "retrieval_complete", "memories": len(memories)},
             }
 
-            # Format chat history as messages
             chat_history = self._format_chat_history(context_messages, memories)
 
-            # DEBUG: Log what context is being sent to agent
-            logger.info(f"===== CONTEXT DEBUG =====")
-            logger.info(f"Current user input: {user_input}")
-            logger.info(f"Number of context messages: {len(chat_history)}")
+            logger.debug(
+                "CONTEXT DEBUG — input: %s | %d context msgs",
+                user_input,
+                len(chat_history),
+            )
             for i, msg in enumerate(chat_history):
-                logger.info(f"Context msg {i}: {msg.type} - {str(msg.content)[:200]}")
-            logger.info(f"========================")
+                logger.debug("  ctx[%d] %s: %.200s", i, msg.type, msg.content)
 
             # Build message list for graph state
             messages = chat_history + [HumanMessage(content=user_input)]
@@ -438,29 +408,28 @@ class HeathcliffAgent:
                 {"messages": messages},
                 config={"callbacks": all_callbacks} if all_callbacks else None,
             ):
-                # Debug: Log raw chunk structure
-                logger.info(
-                    f"Received chunk: {type(chunk).__name__}, keys: {chunk.keys() if isinstance(chunk, dict) else 'N/A'}, content: {str(chunk)[:500]}"
+                logger.debug(
+                    "Received chunk: %s, keys: %s, content: %.500s",
+                    type(chunk).__name__,
+                    chunk.keys() if isinstance(chunk, dict) else "N/A",
+                    chunk,
                 )
 
-                # Graph yields state updates with messages
                 # LangGraph wraps messages in chunk['model']['messages']
-                chunk_messages = None
-                if (
-                    "model" in chunk
-                    and isinstance(chunk["model"], dict)
-                    and "messages" in chunk["model"]
-                ):
-                    chunk_messages = chunk["model"]["messages"]
-                elif "messages" in chunk:
-                    chunk_messages = chunk["messages"]
+                model_data = chunk.get("model")
+                chunk_messages = (
+                    model_data.get("messages")
+                    if isinstance(model_data, dict)
+                    else chunk.get("messages")
+                )
 
                 if chunk_messages:
                     last_msg = chunk_messages[-1]
 
-                    # Debug logging
-                    logger.info(
-                        f"Stream chunk - msg type: {last_msg.type}, has tool_calls: {hasattr(last_msg, 'tool_calls')}, tool_calls value: {getattr(last_msg, 'tool_calls', None)}"
+                    logger.debug(
+                        "Stream chunk — type: %s, tool_calls: %s",
+                        last_msg.type,
+                        getattr(last_msg, "tool_calls", None),
                     )
 
                     # Check for tool calls
@@ -485,22 +454,11 @@ class HeathcliffAgent:
                             "data": {"result": str(last_msg.content)[:200]},
                         }
 
-                    # Check for final AI response (AI message without tool calls, or with empty tool_calls)
-                    if last_msg.type == "ai" and (
-                        not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls
+                    # Final AI response (no tool calls)
+                    if last_msg.type == "ai" and not getattr(
+                        last_msg, "tool_calls", None
                     ):
-                        content = last_msg.content
-                        # Handle Gemini's structured content format
-                        if isinstance(content, list):
-                            text_parts = [
-                                part.get("text", "")
-                                for part in content
-                                if isinstance(part, dict) and part.get("type") == "text"
-                            ]
-                            final_response = "".join(text_parts)
-                        else:
-                            final_response = str(content) if content else ""
-
+                        final_response = self._extract_gemini_content(last_msg.content)
                         if final_response:
                             yield {"type": "response", "data": final_response}
 
@@ -522,7 +480,7 @@ class HeathcliffAgent:
                 },
             }
 
-            logger.info(f"Stream complete: '{final_response[:50]}...'")
+            logger.info("Stream complete: '%.50s...'", final_response)
             log_langfuse_interaction(
                 session_id=session_id,
                 user_input=user_input,
@@ -531,23 +489,20 @@ class HeathcliffAgent:
                 extra_metadata={"tools_used": tools_used},
             )
 
-        except Exception as e:
-            if isinstance(e, AgentMemoryError):
-                error_message = "Memory Not found, Heathcliff shutting down."
-                yield {"type": "error", "message": error_message, "data": error_message}
-                return
+        except AgentMemoryError:
+            error_message = "Memory Not found, Heathcliff shutting down."
+            yield {"type": "error", "message": error_message, "data": error_message}
 
-            logger.error(f"Agent streaming failed: {e}", exc_info=True)
+        except Exception as e:
+            logger.error("Agent streaming failed: %s", e, exc_info=True)
             error_message = (
                 "I encountered an error processing your request. Please try again."
             )
-
             yield {
                 "type": "error",
-                "message": f"Error: {str(e)}",
+                "message": f"Error: {e}",
                 "data": error_message,
             }
-
             log_langfuse_interaction(
                 session_id=session_id,
                 user_input=user_input,
