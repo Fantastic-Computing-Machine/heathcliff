@@ -5,6 +5,7 @@ This directory contains centralized prompt templates and instructions for the He
 ## Files
 
 ### `prompts.py`
+
 Core prompt templates for the agent, including:
 
 - **`SYSTEM_PROMPT`**: Main system instruction that defines Heathcliff's behavior, emphasizing:

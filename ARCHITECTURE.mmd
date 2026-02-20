@@ -1,0 +1,49 @@
+graph TD
+    %% Nodes
+    User((User))
+    
+    subgraph UI [Interfaces]
+        Voice[Voice Loop<br>(Wake Word/STT/TTS)]
+        Streamlit[Streamlit Dashboard<br>(ui/Home.py)]
+    end
+
+    subgraph Core [Core System]
+        Supervisor[HeathcliffAgent<br>(Singleton Supervisor)]
+        Memory[MemoryManager<br>(ChromaDB)]
+        Audio[AudioHandler]
+    end
+
+    subgraph Domains [Domain Subagents (core/subagents/)]
+        Info[Info Agent]
+        Music[Music Agent]
+        Email[Email Agent]
+        Calendar[Calendar Agent]
+        Contacts[Contacts Agent]
+        Comms[Comms Agent]
+    end
+
+    subgraph Skills [Dynamic Skills (skills/)]
+        SkillTools[Skill Tools]
+    end
+
+    %% Edge Connections
+    User <--> Voice
+    User <--> Streamlit
+    
+    Voice --> Supervisor
+    Streamlit --> Supervisor
+    
+    Supervisor <--> Memory
+    
+    %% Supervisor directs to domains/skills
+    Supervisor -.->|Load/Delegate| Info
+    Supervisor -.->|Load/Delegate| Music
+    Supervisor -.->|Load/Delegate| Email
+    Supervisor -.->|Load/Delegate| Calendar
+    Supervisor -.->|Load/Delegate| Contacts
+    Supervisor -.->|Load/Delegate| Comms
+    Supervisor -.->|Load/Delegate| SkillTools
+
+    %% Stylings
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px;
+    class Supervisor,Memory,Audio core;

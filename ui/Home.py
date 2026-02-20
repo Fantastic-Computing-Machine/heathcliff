@@ -24,7 +24,6 @@ from core.approval_handler import (
 )
 from core.memory_manager import MemoryManager
 from logger import logger
-from tools import get_all_tools
 from utils.errors import AgentInitializationError
 from utils.heathcliff_greetings import generate_greeting
 
@@ -48,8 +47,7 @@ def init_components():
     try:
 
         memory = MemoryManager()
-        tools: List[Any] = get_all_tools()
-        agent = HeathcliffAgent(memory_manager=memory, tools=tools)
+        agent = HeathcliffAgent(memory_manager=memory)
     except Exception as e:
         logger.error(f"Error initializing components: {e}")
         raise AgentInitializationError(
@@ -186,9 +184,10 @@ if is_approval_pending(st.session_state):
                     st.session_state["show_modify_form"] = False
                     st.rerun()
 
+my_greeting = generate_greeting(user_name="Adi", include_weather=True)
 # Chat input
 if chat_input_message := st.chat_input(
-    generate_greeting(user_name="Adi", include_weather=True),
+    placeholder=str(my_greeting),
     accept_file=True,
     accept_audio=True,
     file_type=["jpg", "jpeg", "png"],

@@ -1,9 +1,11 @@
-# ABOUTME: Simplified agent orchestrator using LangChain's AgentExecutor
-# ABOUTME: Replaces custom LangGraph StateGraph with built-in agent framework
+# ABOUTME: Supervisor agent orchestrator using the LangChain subagents pattern
+# ABOUTME: Each domain (music, email, calendar, info, contacts, comms) is a
+# ABOUTME: sub-agent wrapped as a single @tool; supervisor sees ~8 tools total.
+# ABOUTME: HeathcliffAgent is a singleton — call HeathcliffAgent.instance() or
+# ABOUTME: construct once; subsequent calls to __init__ return the same object.
 
 import uuid
-from datetime import datetime
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional
 
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -19,58 +21,103 @@ from utils.langfuse_client import (
 from core.middleware import create_middleware_stack
 from config import Config
 
-TOOL_NAME_ALIASES: Dict[str, Set[str]] = {
-    "play_track": {"spotify", "music_player", "play_music"},
-    "pause_playback": {"pause_music", "spotify_pause"},
-    "current_track": {"now_playing", "spotify_status"},
-    "search_web": {"search", "web", "google_search"},
-    "wikipedia_search": {"wikipedia", "wiki"},
-    "get_news": {"news", "headlines"},
-    "get_weather": {"weather"},
-}
+_instance: Optional["HeathcliffAgent"] = None
 
 
 class HeathcliffAgent:
     """
-    Main agent orchestrator using LangChain's AgentExecutor.
+    Singleton supervisor agent orchestrator.
 
-    Simplified architecture:
-    - Uses create_structured_chat_agent for agent creation
-    - AgentExecutor handles iterations, tool calls, error handling
-    - Memory retrieval happens before invocation
-    - Callbacks can intercept tool execution (human-in-the-loop)
+    Tools (subagents + skills) are assembled internally — no tool wiring
+    needed at the call site.  Pass ``extra_tools`` to extend the default set.
+
+    Usage:
+        agent = HeathcliffAgent(memory_manager=mm)
+        # or re-use the same instance anywhere:
+        agent = HeathcliffAgent.instance()
     """
+
+    _instance: Optional["HeathcliffAgent"] = None
+
+    # ------------------------------------------------------------------
+    # Singleton
+    # ------------------------------------------------------------------
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def instance(cls) -> "HeathcliffAgent":
+        """Return the singleton, raising if not yet initialised."""
+        if cls._instance is None:
+            raise RuntimeError(
+                "HeathcliffAgent has not been initialised yet. "
+                "Call HeathcliffAgent(memory_manager=...) first."
+            )
+        return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Destroy the singleton (useful for testing)."""
+        cls._instance = None
+
+    # ------------------------------------------------------------------
+    # Internal tool assembly
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _assemble_default_tools() -> List[Any]:
+        """Load all domain subagents + skill tools."""
+        from core.subagents import get_all_subagent_tools
+        from skills.skill_tools import get_skill_tools
+
+        tools: List[Any] = []
+        try:
+            tools.extend(get_all_subagent_tools())
+        except Exception as exc:
+            logger.warning("Failed to load subagent tools: %s", exc)
+        try:
+            tools.extend(get_skill_tools())
+        except Exception as exc:
+            logger.warning("Failed to load skill tools: %s", exc)
+        return tools
+
+    # ------------------------------------------------------------------
+    # Initialisation (idempotent on singleton re-use)
+    # ------------------------------------------------------------------
 
     def __init__(
         self,
-        memory_manager,
-        tools: Optional[Union[Dict[str, Callable[..., str]], Iterable]] = None,
+        memory_manager=None,
+        extra_tools: Optional[List[Any]] = None,
     ):
         """
-        Initialize the Heathcliff agent.
+        Initialise the Heathcliff supervisor agent.
 
         Args:
-            config: Config object with GEMINI_API_KEY and LLM settings
-            memory_manager: MemoryManager instance for context retrieval
-            tools: List of LangChain Tool objects or dict of callables
+            memory_manager: MemoryManager instance. Required on first call;
+                            ignored on subsequent calls (singleton re-use).
+            extra_tools: Optional list of additional BaseTool objects to
+                         append to the default subagent + skill tools.
         """
-        self.memory_manager = memory_manager
-        self.tools = self._prepare_tools(tools)
+        # Guard: already initialised — skip re-init
+        if getattr(self, "_initialised", False):
+            return
+        self._initialised = True
 
-        # Keep original LangChain Tool objects for structured calling
-        self._original_langchain_tools = []
-        if tools:
-            if not isinstance(tools, dict):
-                self._original_langchain_tools = [
-                    tool
-                    for tool in tools
-                    if hasattr(tool, "name") and hasattr(tool, "description")
-                ]
+        self.memory_manager = memory_manager
+
+        # Assemble tools: defaults + any caller-supplied extensions
+        default_tools = self._assemble_default_tools()
+        extension = list(extra_tools) if extra_tools else []
+        self._tools: List[Any] = default_tools + extension
 
         self.max_iterations = Config.MAX_ITERATIONS
         self.callbacks: List[Any] = []
 
-        # Initialize Langfuse callback
+        # Langfuse callback
         langfuse_handler = get_langfuse_callback_handler()
         if langfuse_handler:
             self.callbacks.append(langfuse_handler)
@@ -80,139 +127,45 @@ class HeathcliffAgent:
                 "Langfuse callback handler unavailable; falling back to manual trace events only"
             )
 
-        # Initialize middleware stack (will be created with LLM after initialization)
+        # Middleware
         self.middleware_stack: List[Any] = []
-
-        # Initialize Gemini LLM
-        llm_kwargs: Dict[str, Any] = {
-            "model": Config.MODEL,
-            "google_api_key": Config.GEMINI_API_KEY,
-            "temperature": Config.TEMPERATURE,
-            "max_output_tokens": Config.MAX_TOKENS,
-            "top_p": Config.TOP_P,
-        }
-
-        if self.callbacks:
-            llm_kwargs["callbacks"] = self.callbacks
-
-        self.llm = ChatGoogleGenerativeAI(**llm_kwargs)
-
-        # Bind tools for structured function calling (Gemini native tool use)
-        if self._original_langchain_tools:
-            self.llm_with_tools = self.llm.bind_tools(self._original_langchain_tools)
-            logger.info(
-                f"✓ Bound {len(self._original_langchain_tools)} tools to LLM for structured function calling"
-            )
-        else:
-            self.llm_with_tools = self.llm
-            logger.warning(
-                "No LangChain tools found - falling back to text-based tool calling only"
-            )
-
-        # Create middleware stack for execution control
+        self.llm = ChatGoogleGenerativeAI(
+            model=Config.MODEL,
+            google_api_key=Config.GEMINI_API_KEY,
+            temperature=Config.TEMPERATURE,
+            max_output_tokens=Config.MAX_TOKENS,
+            top_p=Config.TOP_P,
+        )
         self.middleware_stack = create_middleware_stack(llm=self.llm)
-        # Add middleware to callbacks (they act as callbacks in LangGraph)
         self.callbacks.extend(self.middleware_stack)
 
-        # Build the agent executor
+        # Build supervisor graph
         self.prompt = self._build_prompt_template()
         self.executor = self._build_agent()
 
         logger.info(
-            "HeathcliffAgent initialized with AgentExecutor (max_iterations=%d)",
+            "HeathcliffAgent (supervisor) initialised with %d tools "
+            "(max_iterations=%d)",
+            len(self._tools),
             self.max_iterations,
         )
 
-    def _prepare_tools(
-        self, tools: Optional[Union[Dict[str, Callable[..., str]], Iterable]]
-    ) -> Dict[str, Callable[..., str]]:
-        """Normalize tool registry to a simple name -> callable mapping."""
-        normalized: Dict[str, Callable[..., str]] = {}
-
-        if not tools:
-            return normalized
-
-        if isinstance(tools, dict):
-            iterator = tools.items()
-            for name, func in iterator:
-                if callable(func):
-                    self._register_tool(normalized, name, func)
-            return normalized
-
-        for tool in tools:
-            tool_name = getattr(tool, "name", None)
-            if tool_name and callable(getattr(tool, "invoke", None)):
-                wrapped = self._wrap_langchain_tool(tool)
-                self._register_tool(normalized, tool_name, wrapped)
-            elif callable(tool):
-                self._register_tool(normalized, getattr(tool, "__name__", "tool"), tool)
-
-        return normalized
-
-    def _wrap_langchain_tool(self, tool: Any) -> Callable[..., Any]:
-        """Wrap LangChain BaseTool instances so they match the callable contract."""
-
-        def _runner(*args, **kwargs):
-            tool_input: Any
-
-            if kwargs:
-                tool_input = kwargs
-            elif len(args) == 1:
-                tool_input = args[0]
-            elif len(args) > 1:
-                tool_input = list(args)
-            else:
-                tool_input = {}
-
-            try:
-                return tool.invoke(tool_input)
-            except TypeError:
-                # Fallback to the original invocation style if the tool expects kwargs
-                if kwargs:
-                    return tool.invoke(**kwargs)
-                return tool.invoke(*args)
-
-        return _runner
-
-    def _register_tool(
-        self, registry: Dict[str, Callable[..., Any]], raw_name: str, func: Callable
-    ) -> None:
-        """Register a tool plus any aliases for easier LLM routing."""
-        if not raw_name:
-            raw_name = getattr(func, "__name__", "tool")
-
-        canonical_name = raw_name.lower()
-        registry[canonical_name] = func
-
-        alias_target = canonical_name
-        for key, aliases in TOOL_NAME_ALIASES.items():
-            if canonical_name == key or canonical_name in aliases:
-                alias_target = key
-                break
-
-        # Ensure canonical alias target points to the same function
-        registry[alias_target] = func
-
-        for alias in TOOL_NAME_ALIASES.get(alias_target, set()):
-            registry.setdefault(alias, func)
-
     def _build_prompt_template(self) -> SystemMessage:
-        """Create system prompt for react agent."""
+        """Create supervisor system prompt."""
         master_info = Config.MASTER_INFO
         system_prompt_text = build_system_prompt(master_info)
         return SystemMessage(content=system_prompt_text)
 
     def _build_agent(self):
-        """Build LangChain ReAct agent using modern create_agent API."""
-        # create_agent returns a CompiledStateGraph
-        # It automatically handles tool calling, iterations, and error handling
+        """Build LangChain supervisor agent with subagent + skill tools."""
         agent_graph = create_agent(
-            model=self.llm,  # Base LLM - create_agent handles tool binding
-            tools=self._original_langchain_tools,
-            system_prompt=self.prompt,  # SystemMessage with instructions
-            # Note: max_iterations is handled by the graph's built-in logic
+            model=self.llm,
+            tools=self._tools,
+            system_prompt=self.prompt,
         )
-
+        logger.info(
+            f"Supervisor built with tools: {[getattr(t, 'name', str(t)) for t in self._tools]}"
+        )
         return agent_graph
 
     def _format_chat_history(

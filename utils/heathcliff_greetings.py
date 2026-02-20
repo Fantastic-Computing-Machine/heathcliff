@@ -148,7 +148,7 @@ def generate_greeting(user_name: str = "Sir", include_weather: bool = True) -> s
                 # Generic weather mention
                 base_greeting = f"{base_greeting} It's {weather} outside."
 
-    return base_greeting
+    return str(base_greeting)
 
 
 def generate_return_greeting(

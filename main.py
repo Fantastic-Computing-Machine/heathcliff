@@ -9,7 +9,6 @@ from config import Config
 from core.memory_manager import MemoryManager, AgentMemoryError
 from core.audio_handler import AudioHandler
 from core.agent_core import HeathcliffAgent
-from tools import get_all_tools
 from logger import logger
 
 
@@ -29,10 +28,9 @@ class HeathcliffAssistant:
             print("Memory Not found, Heathcliff shutting down.")
             sys.exit(1)
 
-        # Initialize agent with tools
-        logger.info("Initializing agent with tools...")
-        tools = get_all_tools()
-        self.agent = HeathcliffAgent(memory_manager=self.memory, tools=tools)
+        # Initialize agent (self-assembles all subagent + skill tools)
+        logger.info("Initialising supervisor agent...")
+        self.agent = HeathcliffAgent(memory_manager=self.memory)
 
         # Initialize audio handler
         logger.info("Initializing audio handler...")

@@ -1,12 +1,12 @@
 # Shared Agent Memory & Discovery
 
-This file serves as the **working memory** for all coding agents on the Heathcliff project. It tracks discoveries, issues, and recent activity. For complete project documentation, see `.claude/CLAUDE.md`.
+This file serves as the **working memory** for all coding agents on the Heathcliff project. It tracks discoveries, issues, and recent activity. For complete project documentation, see `AGENTS.md`.
 
 ## How Agents Use This File
 
 - Before starting work: Check this file for ongoing issues, recent discoveries, and previous agent findings
 - After completing work: Update this file with new issues, workarounds, code patterns discovered, and activity log
-- Reference `.claude/CLAUDE.md` for project overview, architecture, configuration, and development standards
+- Reference `AGENTS.md` for project overview, architecture, configuration, and development standards
 - Cost optimization: Reuse previous agent discoveries instead of re-investigating
 - Share API integration workarounds and debugging strategies discovered during work
 
@@ -15,6 +15,7 @@ This file serves as the **working memory** for all coding agents on the Heathcli
 ## Code Patterns & Implementation Notes
 
 ### Phase 1 Foundation - COMPLETED
+
 - **Config Management**: Singleton `Config` instance exported from `config/__init__.py`
 - **Memory Manager**: ChromaDB with 3 collections (memories, chats, my_data) in `core/memory_manager.py`
   - `add_memory()` for long-term facts with categories
@@ -30,22 +31,27 @@ This file serves as the **working memory** for all coding agents on the Heathcli
   - Background threading support with `start_background_listener()`
 
 ### Configuration Files
+
 - `.env.example`: Template for all required API keys
 - `config/config.py`: Runtime settings (wake word, TTS config, news sources, LLM params)
 - `requirements.txt`: All dependencies including langchain-google-genai, chromadb, pvporcupine, etc.
 
 ### Project Structure
+
 ```
 heathcliff/
-├── core/          # Foundation components (MemoryManager, AudioHandler)
-├── tools/         # External API integrations (to be implemented)
-├── ui/            # Streamlit dashboard (to be implemented)
+├── core/          # Foundation components (Agent, Memory, Audio, Subagents)
+│   ├── subagents/ # Domain-specific subagents (info, music, email, etc.)
+│   └── ...
+├── skills/        # Dynamic skills loaded at runtime
+├── ui/            # Streamlit dashboard
 ├── config/        # Configuration loader
-├── utils/         # Shared utilities (empty, populate as needed)
+├── utils/         # Shared utilities
 └── plan/          # Project planning docs
 ```
 
 ### LangChain Integration Notes
+
 - Using Gemini Flash 2.5 via `langchain-google-genai`
 - **CRITICAL API UPDATE (Dec 2025)**: Modern LangChain uses `langchain.agents.create_agent` NOT deprecated `AgentExecutor`
   - Import: `from langchain.agents import create_agent` (NOT `from langgraph.prebuilt import create_react_agent`)
@@ -55,18 +61,24 @@ heathcliff/
   - Response extraction: `result["messages"][-1].content` (may be structured format from Gemini)
   - **Gemini Response Format**: Content may be `[{'type': 'text', 'text': '...'}]` - extract text parts before saving
 - React agent pattern requires tool descriptions to be clear and specific
-- Voice thread callback should handle requests concurrently (may need queuing)
-- Tool implementations should validate inputs at system boundaries only
-- Tool registry prefers LangChain community toolkits (Gmail/Calendar/Search) when available, with config toggle `tools.prefer_langchain_toolkits` and Google Custom Search helpers.
-- Credentials fetched via `utils/google_auth.get_google_credentials()` are cached per scope/token tuple to avoid repeated disk reads; they still refresh automatically when expired.
-- `tools/__init__.py` lazy-loads tool modules via `__getattr__`, keeping startup lighter while still favoring LangChain toolkits, with fallbacks to custom implementations.
-- Gmail and Calendar integrations now rely exclusively on LangChain's community toolkits; the older bespoke `email_tool.py` and `calendar_tool.py` modules were removed to prevent duplicate behavior.
+- **Subagent Architecture**:
+  - `core/subagents/` contains domain-specific subagents (`info`, `music`, `email`, etc.).
+  - Each domain has `tools.py` (low-level tools) and `agent.py` (high-level supervisor wrapper).
+  - `core/subagents/__init__.py` acts as the registry, exporting `get_all_subagent_tools()`.
+- **Singleton Supervisor**:
+  - `HeathcliffAgent` is a singleton; call `HeathcliffAgent.instance()` or `HeathcliffAgent(memory_manager=...)`.
+  - Tools are self-assembled via `_assemble_default_tools()` (subagents + skills).
+  - Extensible via `extra_tools` parameter at initialization.
+- **Skills**:
+  - `skills/` directory supports dynamic skill loading via `skills.skill_tools.get_skill_tools()`.
+- Credentials fetched via `utils/google_auth.get_google_credentials()` are cached per scope/token tuple.
 
 ---
 
 ## Known Issues & Workarounds
 
 ### Phase 1 Implementation
+
 - **RESOLVED**: Conversation history persistence - now using ChromaDB with `save_chat()` method
 - Voice listener in separate thread - concurrent request handling not fully tested
 - Gmail, Calendar, Spotify rate limits - need backoff/retry logic implementation
@@ -75,6 +87,7 @@ heathcliff/
 - PyAudio setup is platform-dependent - test on target systems early (requires `sudo apt install python3-pyaudio` on Linux)
 
 ### Dependencies Installation Notes
+
 - Install system dependencies first: `sudo apt install python3-pyaudio` (Linux)
 - ChromaDB persistence directory defaults to `./chroma_db`
 - Porcupine access key optional for free tier (pass to AudioHandler constructor for paid tier)
@@ -84,6 +97,7 @@ heathcliff/
 ## Discovered API Patterns
 
 ### ChromaDB
+
 - Collections auto-create on first access with `get_or_create_collection()`
 - Metadata filtering with `where` parameter in queries
 - IDs must be unique strings (using UUID + prefixes: `mem_`, `doc_`, etc.)
@@ -91,12 +105,14 @@ heathcliff/
 - Query returns dict with `documents`, `metadatas`, `distances`, `ids` keys
 
 ### Configuration Loading
+
 - `Config` is a singleton instance to avoid re-reading files
 - Class-based config values are accessed via attributes (example: `config.TEMPERATURE`)
 - Environment variables override config defaults at load time
 - Validation with `config.validate()` checks required API keys
 
 ### Audio Processing
+
 - PyAudio stream must match Porcupine sample rate (16000 Hz)
 - Wake word detection processes frame chunks (512 samples)
 - `adjust_for_ambient_noise()` essential before STT to reduce errors
@@ -236,7 +252,7 @@ heathcliff/
   - Created ChromaDB memory manager with 3 collections
   - Built complete audio handler with wake word, STT, TTS
   - Updated all requirements and configuration files
-  - Updated CLAUDE.md with Gemini integration, task tracking, code org standards
+  - Updated AGENTS.md with Gemini integration, task tracking, code org standards
   - Created comprehensive TODO.md with all project tasks
   - Files created:
     - `config/config.py` / `config/__init__.py` - centralized configuration
@@ -328,3 +344,25 @@ heathcliff/
   - Configured Gemini LLM + Gemini embeddings + Chroma Cloud via `config/config.py`.
   - Heathcliff now uses Mem0 SDK for memory add/search while chat/docs stay in Chroma Cloud.
   - Dockerfile + docker-compose now run `heathcliff` only.
+
+- **2026-02-20**: **Architecture Refactor - Subagents & Singleton Supervisor** ✅
+  - **Goal**: Consolidate scattered tools/agents into a domain-centric structure and simplify orchestration.
+  - **Key Changes**:
+    - **Directory Structure**:
+      - `tools/` and `core/sub_agents/` **REMOVED**.
+      - New `core/subagents/` structure: `domain/{tools.py, agent.py}` (e.g., `info/`, `music/`, `email/`).
+      - `core/subagents/__init__.py`: Registry exporting `get_all_subagent_tools()`.
+    - **HeathcliffAgent Singleton**:
+      - `HeathcliffAgent` is now a **singleton** (accessed via `.instance()` or constructor).
+      - **Self-Wiring**: Tools are assembled internally via `_assemble_default_tools()`. No more passing `tools=[...]` from `main.py`.
+      - Supports `extra_tools` param for runtime extension.
+    - **Skills Framework**:
+      - Added `skills/` directory for dynamic skill loading.
+      - `skills/skill_tools.py` enables identifying and loading new skills at runtime.
+    - **Testing**:
+      - Comprehensive test suite added: `tests/test_agent_core.py`, `tests/test_subagents.py`, `tests/test_skills.py`.
+      - **100% Pass Rate** (101 tests) for the new architecture.
+  - **Benefits**:
+    - **Cleaner Usage**: `agent = HeathcliffAgent(memory_manager=mm)` works out of the box.
+    - **Modular Domains**: Each domain is self-contained.
+    - **Stability**: Singleton pattern prevents multiple-agent instantiation issues in UI/Voice threads.

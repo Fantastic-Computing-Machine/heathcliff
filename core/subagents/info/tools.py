@@ -12,7 +12,7 @@ import requests
 import wikipedia
 from langchain.tools import tool
 
-from config import get_config
+from config import Config
 from logger import logger
 
 _google_tool: Optional[Any] = None
