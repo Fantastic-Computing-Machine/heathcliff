@@ -66,7 +66,34 @@ def comms_agent_tool(request: str) -> str:
     try:
         logger.info(f"[comms_agent] {request[:80]}")
         result = _agent.invoke({"messages": [{"role": "user", "content": request}]})
-        return result["messages"][-1].content
+        
+        messages = result.get("messages", [])
+        if not messages:
+            return "No response generated."
+            
+        last_msg = messages[-1]
+        content = last_msg.content
+        if isinstance(content, list):
+            resp = "".join(
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            )
+        else:
+            resp = str(content) if content else ""
+            
+        resp = resp.strip()
+        
+        # Fallback: if AI yielded empty string, use the last tool's output
+        if not resp:
+            for msg in reversed(messages):
+                if getattr(msg, "type", "") == "tool":
+                    resp = str(msg.content)
+                    break
+            if not resp:
+                resp = "Action completed, but no text response was generated."
+                
+        return resp
     except Exception as exc:
         logger.error(f"[comms_agent] error: {exc}", exc_info=True)
         return f"Communications failed: {exc}"

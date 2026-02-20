@@ -13,8 +13,10 @@ from logger import logger
 _spotify_client: Optional[spotipy.Spotify] = None
 
 from spotipy.oauth2 import CacheFileHandler
+import os
 
-SPOTIFY_CACHE_PATH = ".spotify_cache"
+SPOTIFY_CACHE_PATH = "keys/.spotify_cache"
+
 
 def _get_spotify_client() -> spotipy.Spotify:
     """Get authenticated Spotify client (singleton).
@@ -35,6 +37,10 @@ def _get_spotify_client() -> spotipy.Spotify:
         # - Uses 127.0.0.1 instead of localhost (Spotify's new requirement as of April 2025)
         # - cache_path: .spotify_cache stores refresh token for automatic token renewal
         # - open_browser: False (manual OAuth flow works better in WSL environment)
+        cache_dir = os.path.dirname(SPOTIFY_CACHE_PATH)
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
+
         auth_manager = SpotifyOAuth(
             client_id=Config.SPOTIFY_CLIENT_ID,
             client_secret=Config.SPOTIFY_CLIENT_SECRET,
@@ -93,12 +99,16 @@ def _get_active_device(sp: spotipy.Spotify) -> Optional[str]:
         # Prefer active device
         for device in devices["devices"]:
             if device.get("is_active"):
-                logger.info(f"Using active device: {device.get('name')} ({device.get('type')})")
+                logger.info(
+                    f"Using active device: {device.get('name')} ({device.get('type')})"
+                )
                 return device["id"]
 
         # Fall back to first available device
         first_device = devices["devices"][0]
-        logger.info(f"No active device, using first available: {first_device.get('name')} ({first_device.get('type')})")
+        logger.info(
+            f"No active device, using first available: {first_device.get('name')} ({first_device.get('type')})"
+        )
         return first_device["id"]
 
     except Exception as e:

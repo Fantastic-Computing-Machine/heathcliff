@@ -366,3 +366,25 @@ heathcliff/
     - **Cleaner Usage**: `agent = HeathcliffAgent(memory_manager=mm)` works out of the box.
     - **Modular Domains**: Each domain is self-contained.
     - **Stability**: Singleton pattern prevents multiple-agent instantiation issues in UI/Voice threads.
+
+- **2026-02-20**: **3D Blob UI - End-to-End Verified** ✅
+  - **Goal**: Build a standalone 3D AI blob UI in `assets/` (separate from Streamlit).
+  - **Files Created**:
+    - `assets/index.html` — HTML shell loading fonts, CSS, Three.js CDN, blob.js, chat.js
+    - `assets/style.css` — warm lavender palette (zero teal), glass-morphism, animations
+    - `assets/blob.js` — GPU simplex noise vertex shader, SphereGeometry(256x128), 4 states, intensity control, touch reactivity, floating particles, glow sphere
+    - `assets/chat.js` — chat overlay, `/api/chat` POST, single query/response display, blob state transitions
+    - `assets/server.py` — FastAPI server (static files + chat API bridging to HeathcliffAgent)
+    - `ui/blob.py` — Streamlit custom component wrapper for embedding blob in dashboard
+  - **Modified**: `ui/Home.py` (blob-centered layout), `pyproject.toml` (added fastapi dep)
+  - **Testing Results (2026-02-20)**:
+    - FastAPI app imports cleanly, routes registered: `/`, `/api/chat`, static mount
+    - All static assets serve 200 OK (index.html, style.css, blob.js, chat.js)
+    - Three.js CDN r128 confirmed available
+    - `/api/chat` POST with `{"message":"Hello"}` returns `{"response":"Hello, sir. How may I be of assistance today?"}` — full agent pipeline works
+  - **Key Discoveries**:
+    - SphereGeometry(1, 256, 128) required for smooth normals (icosahedron showed visible triangles)
+    - GPU vertex shader with Ashima Arts simplex noise — CPU displacement was jagged and slow
+    - Thinking state needed gentle parameters (speed=0.45, noiseAmp=0.13) to avoid "crumpled paper" look
+  - **How to Run**: `uv run python assets/server.py` → opens on http://localhost:8600
+  - **Possible Enhancements**: mouse-hover tracking, audio reactivity for voice mode, further animation tuning

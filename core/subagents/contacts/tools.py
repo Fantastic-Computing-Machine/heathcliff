@@ -20,7 +20,7 @@ def _get_people_service():
     # Let's use "token.pickle" to encourage a single sign-on experience,
     # but we must catch the "invalid grant" or scope error if possible.
     # Given the recent conversation, the user is rebuilding token.pickle.
-    creds = get_google_credentials(PEOPLE_SCOPES, token_file="token.pickle")
+    creds = get_google_credentials(PEOPLE_SCOPES)
     return build("people", "v1", credentials=creds)
 
 
@@ -60,7 +60,7 @@ def search_contacts(query: str) -> str:
             phones = person.get("phoneNumbers", [])
 
             name = names[0].get("displayName") if names else "Unknown Name"
-            
+
             email_list = [e.get("value") for e in emails]
             phone_list = [p.get("value") for p in phones]
 
@@ -69,7 +69,7 @@ def search_contacts(query: str) -> str:
                 contact_info += f"\n  Emails: {', '.join(email_list)}"
             if phone_list:
                 contact_info += f"\n  Phones: {', '.join(phone_list)}"
-            
+
             formatted_contacts.append(contact_info)
 
         return "\n---\n".join(formatted_contacts)

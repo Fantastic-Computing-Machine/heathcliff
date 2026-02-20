@@ -1,5 +1,8 @@
 # ABOUTME: Google OAuth2 authentication utilities for Gmail, Calendar, and Drive APIs
 # ABOUTME: Handles credential loading, token refresh, and scope management
+import sys
+
+sys.path.append(".")
 
 import os
 import pickle
@@ -13,28 +16,39 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 _cache_lock = Lock()
 _credential_cache: Dict[Tuple, Credentials] = {}
 
+GOOGLE_CREDENTIALS_FILE = "keys/credentials.json"
+GOOGLE_TOKEN_FILE = "keys/token.json"
 
-def _cache_key(scopes: List[str], token_file: str, credentials_file: Optional[str]) -> Tuple:
+
+def _cache_key(
+    scopes: List[str], token_file: str, credentials_file: Optional[str]
+) -> Tuple:
     """Generate a hashable cache key for credential retrieval."""
 
     normalized_scopes = tuple(sorted(set(scopes)))
-    resolved_credentials_file = credentials_file or os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    resolved_credentials_file = credentials_file or os.getenv(
+        "GOOGLE_APPLICATION_CREDENTIALS", ""
+    )
     return (normalized_scopes, token_file, resolved_credentials_file)
 
 
-def _load_from_disk(token_file: str) -> Optional[Credentials]:
+def _load_from_disk(
+    token_file: str, scopes: Optional[List[str]] = None
+) -> Optional[Credentials]:
     """Load credentials from disk if the token file exists."""
 
     if os.path.exists(token_file):
-        with open(token_file, "rb") as token:
-            return pickle.load(token)
+        try:
+            return Credentials.from_authorized_user_file(token_file, scopes)
+        except Exception:
+            pass
     return None
 
 
 def get_google_credentials(
     scopes: List[str],
-    token_file: str = "token.pickle",
-    credentials_file: Optional[str] = None,
+    token_file: str = GOOGLE_TOKEN_FILE,
+    credentials_file: Optional[str] = GOOGLE_CREDENTIALS_FILE,
 ) -> Credentials:
     """
     Get or create Google OAuth2 credentials with specified scopes.
@@ -42,7 +56,7 @@ def get_google_credentials(
     Args:
         scopes: List of OAuth2 scopes required
         token_file: Path to store/load the token pickle file
-        credentials_file: Path to credentials.json (if None, uses GOOGLE_APPLICATION_CREDENTIALS env var)
+        credentials_file: Path to credentials.json (if None, uses GOOGLE_APPLICATION_CREDENTIALS env var or keys/credentials.json)
 
     Returns:
         Google OAuth2 Credentials object
@@ -56,7 +70,7 @@ def get_google_credentials(
         creds = _credential_cache.get(key)
 
         if not creds:
-            creds = _load_from_disk(token_file)
+            creds = _load_from_disk(token_file, scopes)
 
         if creds and not creds.valid and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -66,17 +80,30 @@ def get_google_credentials(
                 "GOOGLE_APPLICATION_CREDENTIALS"
             )
 
-            if not resolved_credentials_file or not os.path.exists(resolved_credentials_file):
+            if not resolved_credentials_file and os.path.exists(
+                GOOGLE_CREDENTIALS_FILE
+            ):
+                resolved_credentials_file = GOOGLE_CREDENTIALS_FILE
+
+            if not resolved_credentials_file or not os.path.exists(
+                resolved_credentials_file
+            ):
                 raise FileNotFoundError(
                     "Google credentials file not found. "
                     "Set GOOGLE_APPLICATION_CREDENTIALS env var or pass credentials_file parameter."
                 )
 
-            flow = InstalledAppFlow.from_client_secrets_file(resolved_credentials_file, scopes)
-            creds = flow.run_local_server(port=0)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                resolved_credentials_file, scopes
+            )
+            creds = flow.run_local_server(port=0, open_browser=False)
 
-            with open(token_file, "wb") as token:
-                pickle.dump(creds, token)
+            token_dir = os.path.dirname(token_file)
+            if token_dir:
+                os.makedirs(token_dir, exist_ok=True)
+
+            with open(token_file, "w") as token:
+                token.write(creds.to_json())
 
         _credential_cache[key] = creds
 
@@ -95,8 +122,15 @@ CALENDAR_SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
 ]
 
+KEEP_SCOPES = ["https://www.googleapis.com/auth/keep.readonly"]
+
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 PEOPLE_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly"]
 
 ALL_GOOGLE_SCOPES = GMAIL_SCOPES + CALENDAR_SCOPES + DRIVE_SCOPES + PEOPLE_SCOPES
+
+
+# if __name__ == "__main__":
+#     creds = get_google_credentials(ALL_GOOGLE_SCOPES)
+#     print(creds)
