@@ -165,7 +165,7 @@ class HeathcliffAgent:
     def __init__(self, config, memory_manager):
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash-exp",
-            google_api_key=config.GEMINI_API_KEY
+            google_api_key=config.AI_KEY
         )
         self.memory = memory_manager
         self.graph = self._build_graph()

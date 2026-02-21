@@ -27,12 +27,44 @@ class ChromaConf:
 
 
 class RuntimeConf:
+    # Model def
     MODEL = "gemini-2.5-flash-lite"
+    SUPERVISOR_MODEL = "google_genai:gemini-3-flash-preview"
+    TOOL_MODEL = "google_genai:gemini-2.5-pro"
+    # Supervisor Hyperparameters
     TEMPERATURE = 0.5
     MAX_TOKENS = 8192
     TOP_P = 0.7
     MAX_ITERATIONS = 20
     TIMEOUT_SECONDS = 300
+    MAX_RETRIES = 3
+
+
+class PlatformConf:
+    # Google / Gemini API Keys
+    AI_KEY = os.getenv("AI_KEY")
+    GEMINI_API_KEY = AI_KEY
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+    GOOGLE_APPLICATION_CREDENTIALS = os.getenv(
+        "GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"
+    )
+    # Google Search
+    GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
+    GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
+
+    # Spotify API Credentials
+    SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+    SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+
+    # Messaging Platform Tokens
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+    # Twitter API Credentials
+    TWITTER_API_KEY = os.getenv("TWITTER_API_KEY")
+    TWITTER_API_SECRET = os.getenv("TWITTER_API_SECRET")
+    TWITTER_ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN")
+    TWITTER_ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET")
 
 
 class Mem0Conf:
@@ -55,7 +87,7 @@ class Mem0Conf:
     _embedder_config: Dict[str, Any] = {
         "provider": "gemini",
         "config": {
-            "model": "models/text-embedding-004",
+            "model": "models/gemini-embedding-001",
             "api_key": os.getenv("GOOGLE_API_KEY"),
         },
     }
@@ -76,32 +108,6 @@ class Mem0Conf:
         "embedder": _embedder_config,
         "vector_store": _vector_store_config,
     }
-
-
-class PlatformConf:
-    # Google / Gemini API Keys
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-    GOOGLE_APPLICATION_CREDENTIALS = os.getenv(
-        "GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"
-    )
-    # Google Search
-    GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
-    GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
-
-    # Spotify API Credentials
-    SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-    SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
-
-    # Messaging Platform Tokens
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-    # Twitter API Credentials
-    TWITTER_API_KEY = os.getenv("TWITTER_API_KEY")
-    TWITTER_API_SECRET = os.getenv("TWITTER_API_SECRET")
-    TWITTER_ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN")
-    TWITTER_ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET")
 
 
 class LangFuseConf:
@@ -179,8 +185,8 @@ class Conf(
     @classmethod
     def validate(cls) -> None:
         missing_keys = []
-        if not cls.GEMINI_API_KEY:
-            missing_keys.append("GEMINI_API_KEY")
+        if not cls.AI_KEY:
+            missing_keys.append("AI_KEY")
         if not cls.GOOGLE_API_KEY:
             missing_keys.append("GOOGLE_API_KEY")
         if not cls.CHROMA_API_KEY:

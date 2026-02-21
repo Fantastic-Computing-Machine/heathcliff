@@ -3,10 +3,10 @@
 
 from typing import Any, List
 
+from googleapiclient.discovery import build
 from langchain_google_community import CalendarToolkit
 
-from googleapiclient.discovery import build
-from utils.google_auth import get_google_credentials, CALENDAR_SCOPES
+from utils.google_auth import CALENDAR_SCOPES, get_google_credentials
 
 
 def _get_calendar_service():

@@ -12,8 +12,9 @@ from logger import logger
 
 _spotify_client: Optional[spotipy.Spotify] = None
 
-from spotipy.oauth2 import CacheFileHandler
 import os
+
+from spotipy.oauth2 import CacheFileHandler
 
 SPOTIFY_CACHE_PATH = "keys/.spotify_cache"
 

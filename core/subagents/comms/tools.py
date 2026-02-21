@@ -2,31 +2,16 @@
 # ABOUTME: Integrates Telegram Bot API and Google Drive API
 
 import io
-from typing import TYPE_CHECKING, Any, List
+from typing import Any, List
 
 from langchain.tools import tool
+from telegram import Bot as TelegramBot
 
 from config import Config
 from logger import logger
 from utils.google_auth import get_google_credentials
 
-if TYPE_CHECKING:  # pragma: no cover - typing helper
-    from telegram import Bot as TelegramBot
-
 _telegram_bot = None
-
-
-def _import_telegram_bot():
-    """Import python-telegram-bot's Bot class lazily to avoid hard dependency at import time."""
-    try:
-        from telegram import Bot as TelegramBot
-    except ImportError as exc:  # pragma: no cover - dependency missing
-        raise ImportError(
-            "python-telegram-bot is required for Telegram features. "
-            "Install it via `pip install python-telegram-bot`."
-        ) from exc
-
-    return TelegramBot
 
 
 def _get_telegram_bot() -> "TelegramBot":
@@ -38,7 +23,6 @@ def _get_telegram_bot() -> "TelegramBot":
         token = config.TELEGRAM_BOT_TOKEN
         if not token:
             raise ValueError("Telegram bot token not configured")
-        TelegramBot = _import_telegram_bot()
         _telegram_bot = TelegramBot(token=token)
 
     return _telegram_bot

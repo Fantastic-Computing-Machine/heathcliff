@@ -8,18 +8,18 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.chat_models import init_chat_model
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from config import Config
+from core.memory_manager import AgentMemoryError
+from core.middleware import create_middleware_stack
 from instructions.prompts import build_system_prompt
 from logger import logger
-from core.memory_manager import AgentMemoryError
 from utils.langfuse_client import (
     get_langfuse_callback_handler,
     log_langfuse_interaction,
 )
-from core.middleware import create_middleware_stack
-from config import Config
 
 
 class HeathcliffAgent:
@@ -123,12 +123,14 @@ class HeathcliffAgent:
                 "falling back to manual trace events only"
             )
 
-        self.llm = ChatGoogleGenerativeAI(
-            model=Config.MODEL,
-            google_api_key=Config.GEMINI_API_KEY,
+        self.llm = init_chat_model(
+            api_key=Config.AI_KEY,
+            model=Config.SUPERVISOR_MODEL,
             temperature=Config.TEMPERATURE,
-            max_output_tokens=Config.MAX_TOKENS,
+            max_tokens=Config.MAX_TOKENS,
             top_p=Config.TOP_P,
+            max_retries=3,
+            timeout=Config.TIMEOUT_SECONDS,
         )
         self.middleware_stack = create_middleware_stack(llm=self.llm)
         self.callbacks.extend(self.middleware_stack)

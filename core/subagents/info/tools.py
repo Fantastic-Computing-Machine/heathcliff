@@ -10,7 +10,13 @@ from typing import Any, Dict, List, Optional
 
 import requests
 import wikipedia
+from bs4 import BeautifulSoup
 from langchain.tools import tool
+from langchain_community.tools.ddg_search.tool import (
+    DuckDuckGoSearchResults as DuckDuckGoSearchTool,
+)
+from langchain_community.tools.google_search import GoogleSearchResults
+from langchain_community.utilities import GoogleSearchAPIWrapper
 
 from config import Config
 from logger import logger
@@ -50,13 +56,6 @@ def _init_google_tool(max_results: int) -> Optional[Any]:
 
     if _google_tool is None:
         try:
-            from langchain_community.tools.google_search import GoogleSearchResults
-            from langchain_community.utilities import GoogleSearchAPIWrapper
-        except ImportError:  # pragma: no cover - optional dependency
-            logger.warning("Google search dependencies not installed")
-            return None
-
-        try:
             # Create the API wrapper with environment credentials
             api_wrapper = GoogleSearchAPIWrapper()
 
@@ -76,19 +75,6 @@ def _init_duck_tool() -> Optional[Any]:
     global _duck_tool
 
     if _duck_tool is None:
-        try:
-            from langchain_community.tools.ddg_search.tool import (
-                DuckDuckGoSearchRun as DuckDuckGoSearchTool,
-            )
-
-        except ImportError:  # pragma: no cover - optional dependency
-            try:
-                from langchain_community.tools.ddg_search.tool import (
-                    DuckDuckGoSearchResults as DuckDuckGoSearchTool,
-                )
-            except ImportError:
-                return None
-
         _duck_tool = DuckDuckGoSearchTool()
 
     return _duck_tool
@@ -191,7 +177,9 @@ def get_weather(location: str | None = None) -> str:
         humidity = data["main"]["humidity"]
         description = data["weather"][0]["description"]
 
-        logger.info(f"Weather retrieved for {city_name}: {description}, {temp}{temp_unit}")
+        logger.info(
+            f"Weather retrieved for {city_name}: {description}, {temp}{temp_unit}"
+        )
 
         return (
             f"Weather in {city_name}: {description.capitalize()}\n"
@@ -205,6 +193,7 @@ def get_weather(location: str | None = None) -> str:
     except KeyError as e:
         logger.error(f"Unexpected weather API response format: {e}", exc_info=True)
         return f"Error parsing weather data for {location}"
+
     except Exception as e:
         logger.error(f"Unexpected error in get_weather: {e}", exc_info=True)
         return f"Error: {str(e)}"
@@ -278,19 +267,20 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
     try:
         config = Config
         max_results = 5
-        primary_provider = provider or "google"
+        # Use DuckDuckGo as primary search, fallback gracefully
+        primary_provider = provider or "duckduckgo"
         response = _dispatch_search(primary_provider, query, max_results, config)
 
         if response:
             return response
 
-        fallback_provider = "duckduckgo"
-        if fallback_provider and fallback_provider != primary_provider:
-            fallback_response = _dispatch_search(
-                fallback_provider, query, max_results, config
-            )
-            if fallback_response:
-                return fallback_response
+        # Automatic chained fallback
+        fallbacks = ["google"]
+        for fallback in fallbacks:
+            if fallback != primary_provider:
+                fb_resp = _dispatch_search(fallback, query, max_results, config)
+                if fb_resp:
+                    return fb_resp
 
         # Final fallback: Wikipedia summary search
         wiki_results = wikipedia.search(query, results=3)
@@ -323,7 +313,7 @@ def wikipedia_search(query: str) -> str:
         query: Wikipedia search query
 
     Returns:
-        Wikipedia article summary
+        Full Wikipedia article content
     """
     try:
         logger.debug(f"Searching Wikipedia for: {query}")
@@ -340,26 +330,34 @@ def wikipedia_search(query: str) -> str:
         # Try each result until we find one that works
         for result_title in results:
             try:
-                logger.debug(f"Attempting to fetch summary for: {result_title}")
-                summary = wikipedia.summary(result_title, sentences=5, auto_suggest=False)
-                logger.info(f"Successfully retrieved Wikipedia summary for: {result_title}")
-                return f"{result_title}:\n{summary}"
+                logger.debug(f"Attempting to fetch full article for: {result_title}")
+                page = wikipedia.page(result_title, auto_suggest=False)
+                logger.info(
+                    f"Successfully retrieved Wikipedia article for: {result_title}"
+                )
+                return f"{result_title} (Full Text):\n{page.content}"
             except wikipedia.exceptions.PageError:
                 logger.debug(f"PageError for {result_title}, trying next result")
                 continue
             except wikipedia.exceptions.DisambiguationError as e:
-                logger.debug(f"DisambiguationError for {result_title}, trying first option")
+                logger.debug(
+                    f"DisambiguationError for {result_title}, trying first option"
+                )
                 # Try the first disambiguation option
                 if e.options:
                     try:
-                        summary = wikipedia.summary(e.options[0], sentences=5, auto_suggest=False)
-                        logger.info(f"Retrieved disambiguated summary for: {e.options[0]}")
-                        return f"{e.options[0]}:\n{summary}"
+                        page = wikipedia.page(e.options[0], auto_suggest=False)
+                        logger.info(
+                            f"Retrieved disambiguated full article for: {e.options[0]}"
+                        )
+                        return f"{e.options[0]} (Full Text):\n{page.content}"
                     except:
                         continue
 
         # If we exhausted all results
-        logger.warning(f"Failed to retrieve summary for any Wikipedia result for: {query}")
+        logger.warning(
+            f"Failed to retrieve summary for any Wikipedia result for: {query}"
+        )
         return f"No Wikipedia page found for: {query}"
 
     except wikipedia.exceptions.DisambiguationError as e:
@@ -368,8 +366,65 @@ def wikipedia_search(query: str) -> str:
         logger.debug(f"Top-level disambiguation for '{query}': {options}")
         return f"Multiple results found for '{query}'. Please be more specific. Options: {options}"
     except Exception as e:
-        logger.error(f"Unexpected error searching Wikipedia for '{query}': {e}", exc_info=True)
+        logger.error(
+            f"Unexpected error searching Wikipedia for '{query}': {e}", exc_info=True
+        )
         return f"Error searching Wikipedia: {str(e)}"
+
+
+@tool
+def read_website(url: str) -> str:
+    """
+    Read and extract the text content from a specific webpage URL.
+    Use this after search_web to get in-depth information from a specific article/page.
+
+    Args:
+        url: The full URL to read (e.g., 'https://en.wikipedia.org/wiki/Tsunami')
+
+    Returns:
+        The extracted text content of the webpage, up to 15,000 characters.
+    """
+    try:
+        logger.debug(f"Reading website: {url}")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Remove script and style elements
+        for script in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            script.extract()
+
+        # Get text
+        text = soup.get_text(separator=" ", strip=True)
+
+        # Clean up excessive whitespace
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = "\n".join(chunk for chunk in chunks if chunk)
+
+        logger.info(f"Successfully extracted {len(text)} characters from {url}")
+
+        # Guard against massive pages choking the context window
+        if len(text) > 15000:
+            text = text[:15000] + "... [Content truncated due to length]"
+
+        return (
+            text
+            if text
+            else "The page was successfully fetched but no readable text was found."
+        )
+
+    except requests.exceptions.Timeout:
+        return f"Error: Request timed out while trying to fetch {url}"
+    except requests.exceptions.RequestException as e:
+        return f"Error fetching website {url}: {str(e)}"
+    except Exception as e:
+        logger.error(f"Unexpected error reading {url}: {e}", exc_info=True)
+        return f"Error processing website: {str(e)}"
 
 
 def get_info_tools() -> List[Any]:
@@ -379,4 +434,4 @@ def get_info_tools() -> List[Any]:
     Returns:
         List of LangChain tools
     """
-    return [get_weather, get_news, search_web, wikipedia_search]
+    return [get_weather, get_news, search_web, wikipedia_search, read_website]

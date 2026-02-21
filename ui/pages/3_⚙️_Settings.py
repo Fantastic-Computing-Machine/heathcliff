@@ -7,7 +7,9 @@ import sys
 import streamlit as st
 
 # Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from config import Config
 
@@ -19,7 +21,9 @@ st.title("⚙️ Configuration & Settings")
 st.markdown("View and verify your Heathcliff configuration")
 
 # Tabs for different settings categories
-tab1, tab2, tab3, tab4 = st.tabs(["🔑 API Status", "🎤 Audio Settings", "🤖 LLM Settings", "📁 Database"])
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["🔑 API Status", "🎤 Audio Settings", "🤖 LLM Settings", "📁 Database"]
+)
 
 # Tab 1: API Status
 with tab1:
@@ -28,11 +32,9 @@ with tab1:
     # Check API keys
     api_checks = {
         "Gemini API": {
-            "configured": bool(Config.GEMINI_API_KEY),
+            "configured": bool(Config.AI_KEY),
             "key_preview": (
-                f"{Config.GEMINI_API_KEY[:10]}..."
-                if Config.GEMINI_API_KEY
-                else "Not configured"
+                f"{Config.AI_KEY[:10]}..." if Config.AI_KEY else "Not configured"
             ),
             "docs": "https://makersuite.google.com/app/apikey",
         },
@@ -89,12 +91,12 @@ with tab1:
         col1, col2, col3 = st.columns([2, 2, 1])
 
         with col1:
-            status_icon = "✅" if info['configured'] else "❌"
+            status_icon = "✅" if info["configured"] else "❌"
             st.write(f"{status_icon} **{api_name}**")
 
         with col2:
-            if info['configured']:
-                st.code(info['key_preview'], language=None)
+            if info["configured"]:
+                st.code(info["key_preview"], language=None)
             else:
                 st.warning("Not configured")
 
@@ -193,16 +195,20 @@ with tab4:
         st.code(persist_dir, language="bash")
 
         st.markdown("**Collections**")
-        st.code("""
+        st.code(
+            """
 - memories (long-term facts)
 - chat_messages (conversations)
 - my_data (documents)
-        """, language=None)
+        """,
+            language=None,
+        )
 
     with col2:
         st.markdown("**Status**")
 
         import os as os_check
+
         if os_check.path.exists(persist_dir):
             st.success("✅ Database directory exists")
 
@@ -226,12 +232,16 @@ with tab4:
     st.subheader("⚠️ Danger Zone")
 
     with st.expander("🗑️ Clear All Data"):
-        st.warning("This will delete ALL conversations, memories, and indexed documents!")
+        st.warning(
+            "This will delete ALL conversations, memories, and indexed documents!"
+        )
         st.warning("This action CANNOT be undone!")
 
         if st.button("I understand, clear everything"):
             st.error("❌ Clear functionality disabled in UI for safety")
-            st.info("To clear data, delete the ChromaDB directory manually:\n\n`rm -rf ./chroma_db`")
+            st.info(
+                "To clear data, delete the ChromaDB directory manually:\n\n`rm -rf ./chroma_db`"
+            )
 
 # Footer
 st.markdown("---")

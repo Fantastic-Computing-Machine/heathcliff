@@ -5,21 +5,43 @@
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
 from langchain.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from config import Config
+from core.subagents.contacts.tools import get_people_tools
 from logger import logger
 
 _SYSTEM_PROMPT = """\
-You are a specialist Google Contacts lookup agent.
-Your job: find email addresses, phone numbers, and contact details.
+Act as a specialist Google Contacts lookup agent to accurately find email addresses, phone numbers, and contact details.
 
-If a matching contact IS found: Return their name, email(s), and phone(s) clearly.
-If NO contact is found: Return exactly this message:
-  "No contact found for '[query]'. Please provide the email address directly."
+Your primary role is to search for user contacts. You must NEVER guess or invent contact information under any circumstances.
 
-Do NOT guess or invent contact information under any circumstances.
+# Steps
+1. Analyze the user's request to identify the person or contact information being sought.
+2. Execute the appropriate search tool using the extracted name or query.
+3. Review the search results carefully.
+4. Formulate the response based on the presence or absence of a matching contact.
+
+# Output Format
+Provide a concise text response.
+- If a matching contact IS found: Clearly return their name, email(s), and phone(s).
+- If NO contact is found: Return exactly this message: "No contact found for '[query]'. Please provide the email address directly."
+
+# Examples
+## Example 1: Contact Found
+**Input:** "Find Philip's email address"
+
+**Output:**
+**Reasoning:** The user is looking for an email address for "Philip". I will search the contacts for "Philip".
+**Confirmation:** Philip Thorne: philip.thorne@example.com
+
+## Example 2: Contact Not Found
+**Input:** "What is Sarah's phone number?"
+
+**Output:**
+**Reasoning:** The user wants Sarah's phone number. I searched for "Sarah" but no results were returned.
+**Confirmation:** No contact found for 'Sarah'. Please provide the email address directly.
 """
 
 _agent = None
@@ -27,26 +49,27 @@ _agent = None
 
 def _build() -> Any:
     try:
-        from core.subagents.contacts.tools import get_people_tools
 
         return create_agent(
-            model=ChatGoogleGenerativeAI(
-                model=Config.MODEL,
-                google_api_key=Config.GEMINI_API_KEY,
-                temperature=0.1,
-                max_output_tokens=Config.MAX_TOKENS,
+            model=init_chat_model(
+                api_key=Config.AI_KEY,
+                model=Config.TOOL_MODEL,
+                temperature=0.4,
+                max_tokens=Config.MAX_TOKENS,
+                timeout=Config.TIMEOUT_SECONDS,
+                max_retries=Config.MAX_RETRIES,
             ),
             tools=get_people_tools(),
             system_prompt=_SYSTEM_PROMPT,
+            name="Expert Contacts Agent",
         )
     except Exception as exc:
         logger.warning(f"[contacts_agent] build failed: {exc}")
         return None
 
 
-@tool
-def contacts_agent_tool(request: str) -> str:
-    """Look up contacts from Google Contacts by name, email, or phone.
+@tool(
+    description="""Look up contacts from Google Contacts by name, email, or phone.
 
     Call this BEFORE email_agent_tool when you need someone's email address.
     If the result says "No contact found" — ask Adi for the email before proceeding.
@@ -55,7 +78,10 @@ def contacts_agent_tool(request: str) -> str:
     Example: "Find Philip's email address"
     Example: "What is the phone number for Sarah Johnson?"
     Example: "Look up contact details for John Smith"
-    """
+    """,
+)
+def contacts_agent_tool(request: str) -> str:
+    """Look up contacts from Google Contacts by name, email, or phone."""
     global _agent
     if _agent is None:
         _agent = _build()
@@ -64,11 +90,11 @@ def contacts_agent_tool(request: str) -> str:
     try:
         logger.info(f"[contacts_agent] {request[:80]}")
         result = _agent.invoke({"messages": [{"role": "user", "content": request}]})
-        
+
         messages = result.get("messages", [])
         if not messages:
             return "No response generated."
-            
+
         last_msg = messages[-1]
         content = last_msg.content
         if isinstance(content, list):
@@ -79,9 +105,9 @@ def contacts_agent_tool(request: str) -> str:
             )
         else:
             resp = str(content) if content else ""
-            
+
         resp = resp.strip()
-        
+
         # Fallback: if AI yielded empty string, use the last tool's output
         if not resp:
             for msg in reversed(messages):
@@ -90,7 +116,7 @@ def contacts_agent_tool(request: str) -> str:
                     break
             if not resp:
                 resp = "Action completed, but no text response was generated."
-                
+
         return resp
     except Exception as exc:
         logger.error(f"[contacts_agent] error: {exc}", exc_info=True)

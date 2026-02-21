@@ -2,13 +2,14 @@
 # ABOUTME: Each subpackage (info, music, email, calendar, contacts, comms)
 # ABOUTME: contains tools.py (raw LC tools) + agent.py (@tool wrapper for supervisor)
 
+from typing import Any, List
+
+from core.subagents.calendar.agent import calendar_agent_tool
+from core.subagents.comms.agent import comms_agent_tool
+from core.subagents.contacts.agent import contacts_agent_tool
+from core.subagents.email.agent import email_agent_tool
 from core.subagents.info.agent import info_agent_tool
 from core.subagents.music.agent import music_agent_tool
-from core.subagents.email.agent import email_agent_tool
-from core.subagents.calendar.agent import calendar_agent_tool
-from core.subagents.contacts.agent import contacts_agent_tool
-from core.subagents.comms.agent import comms_agent_tool
-from typing import Any, List
 
 __all__ = [
     "info_agent_tool",

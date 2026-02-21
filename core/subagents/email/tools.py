@@ -3,9 +3,10 @@
 
 from typing import Any, List
 
-from langchain_community.agent_toolkits import GmailToolkit
-from utils.google_auth import get_google_credentials, GMAIL_SCOPES
 from googleapiclient.discovery import build
+from langchain_community.agent_toolkits import GmailToolkit
+
+from utils.google_auth import GMAIL_SCOPES, get_google_credentials
 
 
 def _get_gmail_service():

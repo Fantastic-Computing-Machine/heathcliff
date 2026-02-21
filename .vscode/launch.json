@@ -71,4 +71,4 @@
             }
         }
     ]
-}
+} // uv run python assets/server.py

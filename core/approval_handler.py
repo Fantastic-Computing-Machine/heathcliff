@@ -100,7 +100,9 @@ class StreamlitApprovalHandler(HumanApprovalCallbackHandler):
         """
         if self.session_state is None:
             # No session state provided - approval disabled (for testing)
-            logger.warning("Approval requested but no session_state provided - auto-approving")
+            logger.warning(
+                "Approval requested but no session_state provided - auto-approving"
+            )
             return True
 
         # Store approval request in session state
@@ -176,7 +178,9 @@ def is_approval_pending(session_state: Dict[str, Any]) -> bool:
     return approval is not None and approval.get("status") == "pending"
 
 
-def approve_request(session_state: Dict[str, Any], modified_input: Optional[str] = None):
+def approve_request(
+    session_state: Dict[str, Any], modified_input: Optional[str] = None
+):
     """
     Approve a pending tool execution request.
 

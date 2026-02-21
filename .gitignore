@@ -172,3 +172,4 @@ chroma_db/*
 credentials.json
 token.json
 uv.lock
+.mycache
