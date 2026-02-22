@@ -562,21 +562,5 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ── Streamlit Component Protocol ────────────────────────────────────
-window.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "streamlit:render") {
-    const args = event.data.args;
-    if (args && args.state) setState(args.state);
-    if (args && args.intensity !== undefined) setBlobIntensity(args.intensity);
-  }
-});
-
-(function streamlitInit() {
-  const msg = { isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1 };
-  window.parent.postMessage(msg, "*");
-  const heightMsg = { isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: 800 };
-  window.parent.postMessage(heightMsg, "*");
-})();
-
 // ── Start ───────────────────────────────────────────────────────────
 animate();

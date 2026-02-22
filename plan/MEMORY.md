@@ -39,10 +39,11 @@ heathcliff/
 ├── assets/                  # 3D Blob UI (standalone web frontend)
 │   ├── index.html/style.css # Warm lavender palette, glass-morphism
 │   ├── blob.js              # GPU simplex noise vertex shader, 4 states
-│   ├── chat.js              # Chat overlay, /api/chat POST
-│   └── server.py            # FastAPI server (static + chat API → HeathcliffAgent)
+│   └── chat.js              # Chat overlay, /api/chat POST
 ├── config/                  # Singleton Config (class-based attribute access)
-├── ui/                      # Streamlit dashboard (Home, Memories, Analytics, Settings)
+├── ui/                      # Streamlit dashboard + blob FastAPI server
+│   ├── Home.py              # Streamlit chat dashboard (zero blob references)
+│   └── server.py            # FastAPI blob server (static files + /api/chat → HeathcliffAgent)
 ├── utils/
 │   ├── google_auth.py       # OAuth manager with token caching
 │   └── langfuse_client.py   # Langfuse observability client
@@ -83,14 +84,16 @@ heathcliff/
 
 ## Timeline (Latest Activity)
 
+- **2026-02-21**: **Blob UI cleanup** — Removed dead Streamlit component protocol from `blob.js` (standalone blob has no Streamlit dependency). Updated `MEMORY.md` paths.
+
 - **2026-02-20**: **Architecture Refactor — Subagents & Singleton Supervisor** ✅
   - Removed old `tools/` and `core/sub_agents/`. New `core/subagents/` with 6 domains (calendar, comms, contacts, email, info, music), each with `tools.py` + `agent.py`.
   - HeathcliffAgent singleton with self-wiring. Skills framework in `skills/`.
   - 101 tests passing.
 
 - **2026-02-20**: **3D Blob UI — End-to-End Verified** ✅
-  - Standalone web frontend in `assets/` (FastAPI + Three.js). GPU simplex noise blob, 4 animation states, chat API bridging to HeathcliffAgent.
-  - Run: `uv run python assets/server.py` → <http://localhost:8600>
+  - Standalone web frontend in `assets/` (Three.js). FastAPI server at `ui/server.py`. GPU simplex noise blob, 4 animation states, chat API bridging to HeathcliffAgent.
+  - Run: `uv run python ui/server.py` → <http://localhost:8600>
 
 - **2025-12-28**: **Config & Mem0 Cleanup** ✅
   - Mem0 SDK in-process (replaced REST server). Gemini LLM + Gemini embeddings + Chroma Cloud.

@@ -10,14 +10,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from config import Config
 from core.agent_core import HeathcliffAgent
 from core.memory_manager import MemoryManager
 from logger import logger
+
+# ── Blob config ───────────────────────────────────────────────────────
+ASSETS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "assets",
+)
+BLOB_DEFAULT_PORT = 8600
+BLOB_STATES = ("idle", "listening", "thinking", "speaking")
 
 # ── App ───────────────────────────────────────────────────────────────
 app = FastAPI(title="Heathcliff Blob UI", docs_url=None, redoc_url=None)
@@ -28,9 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ── Static assets (serves index.html, css, js from this directory) ───
-ASSETS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ── Agent singleton ───────────────────────────────────────────────────
 _memory: MemoryManager | None = None
@@ -58,6 +62,10 @@ class ChatResponse(BaseModel):
     response: str
 
 
+class StateRequest(BaseModel):
+    state: str
+
+
 # ── Routes ────────────────────────────────────────────────────────────
 @app.get("/")
 async def serve_index():
@@ -79,6 +87,28 @@ async def chat(req: ChatRequest):
         return ChatResponse(response=f"Sorry, I encountered an error: {str(e)}")
 
 
+@app.post("/api/state")
+async def set_state(req: StateRequest):
+    """Set the blob animation state (for external callers like voice pipeline)."""
+    if req.state not in BLOB_STATES:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": f"Invalid state '{req.state}'. Must be one of: {list(BLOB_STATES)}"
+            },
+        )
+    # State is applied client-side; this endpoint is a validated relay.
+    # Clients poll or use SSE in a future iteration.
+    logger.info(f"Blob state set to: {req.state}")
+    return {"state": req.state}
+
+
+@app.get("/api/states")
+async def list_states():
+    """Return the list of valid blob states."""
+    return {"states": list(BLOB_STATES)}
+
+
 # Mount static files AFTER explicit routes so they don't shadow /api/*
 app.mount("/", StaticFiles(directory=ASSETS_DIR, html=True), name="static")
 
@@ -87,6 +117,6 @@ app.mount("/", StaticFiles(directory=ASSETS_DIR, html=True), name="static")
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("BLOB_PORT", 8600))
+    port = int(os.environ.get("BLOB_PORT", BLOB_DEFAULT_PORT))
     logger.info(f"Starting Heathcliff Blob UI on http://localhost:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
