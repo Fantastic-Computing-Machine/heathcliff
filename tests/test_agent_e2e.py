@@ -111,14 +111,14 @@ class TestBasicConversation:
     def test_context_aware_response(self, memory_manager):
         """Test that agent uses context in responses."""
         memory_manager.recall.return_value = {
-            "documents": [["User's name is Adi"]],
+            "documents": [["User's name is Alex"]],
             "metadatas": [[{"category": "facts"}]],
             "ids": [["mem_1"]],
             "distances": [[0.05]],
         }
 
         agent = _make_agent(
-            memory_manager, executor_response="Hello Adi! Great to see you again."
+            memory_manager, executor_response="Hello Alex! Great to see you again."
         )
 
         response = agent.invoke("Hi there!")
@@ -141,11 +141,11 @@ class TestConversationContinuity:
         def dynamic_response(*args, **kwargs):
             turn_count[0] += 1
             if turn_count[0] == 1:
-                return {"messages": [Mock(content="Nice to meet you, Adi!")]}
+                return {"messages": [Mock(content="Nice to meet you, Alex!")]}
             else:
                 return {
                     "messages": [
-                        Mock(content="Your name is Adi, as you mentioned earlier.")
+                        Mock(content="Your name is Alex, as you mentioned earlier.")
                     ]
                 }
 
@@ -154,7 +154,7 @@ class TestConversationContinuity:
 
         session = "continuity-test"
 
-        agent.invoke("My name is Adi", session_id=session)
+        agent.invoke("My name is Alex", session_id=session)
         response = agent.invoke("What's my name?", session_id=session)
 
         assert memory_manager.build_message_history.call_count == 2

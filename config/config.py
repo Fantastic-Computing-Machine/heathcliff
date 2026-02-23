@@ -1,19 +1,48 @@
 # ABOUTME: Class-based configuration with attribute access and cached singleton
 
 import os
+import sys
+import tomllib
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 
-from config.master_info import MASTER_INFO
 from logger import logger
 
 load_dotenv(".env")
 
+MASTER_INFO_LOC = "master_info.toml"
+
 
 class MasterConf:
-    MASTER_INFO = MASTER_INFO
+    MASTER_INFO = {}
     TZ = "America/New_York"
+
+    @classmethod
+    def _read_master_info(cls) -> None:
+        try:
+            with open(MASTER_INFO_LOC, "rb") as f:
+                loaded_info = tomllib.load(f)
+        except FileNotFoundError:
+            logger.error(f"Master info file not found: {MASTER_INFO_LOC}")
+            sys.exit(1)
+        except tomllib.TOMLDecodeError as exc:
+            logger.error(
+                f"Master info file contains invalid TOML ({MASTER_INFO_LOC}): {exc}"
+            )
+            sys.exit(1)
+
+        if loaded_info is None or loaded_info == {}:
+            logger.error(f"Master info is empty in {MASTER_INFO_LOC}")
+            sys.exit(1)
+
+        if not isinstance(loaded_info, dict):
+            logger.error(
+                f"Master info TOML must decode to a dictionary in {MASTER_INFO_LOC}"
+            )
+            sys.exit(1)
+
+        cls.MASTER_INFO = loaded_info
 
 
 class ChromaConf:
@@ -122,7 +151,7 @@ class LangFuseConf:
     LANGFUSE_RELEASE = os.getenv("LANGFUSE_RELEASE")
 
     TRACE_NAME = "heathcliff.agent"
-    LANGFUSE_USER_ID = "adiagarwal"
+    LANGFUSE_USER_ID = "heathcliff_user"
     ENVIRONMENT = os.getenv("LANGFUSE_ENVIRONMENT", "local-dev")
 
 
@@ -184,6 +213,7 @@ class Conf(
     def __new__(cls) -> "Conf":
         if cls._instance is None:
             cls._instance = super(Conf, cls).__new__(cls)
+            cls._read_master_info()
         return cls._instance
 
     @classmethod

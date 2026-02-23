@@ -1,0 +1,79 @@
+graph TD
+    %% Nodes
+    User((User))
+    
+    subgraph UI [Interfaces]
+        Voice[Voice Loop<br>(Wake Word/STT/TTS)]
+        Streamlit[Streamlit Dashboard<br>(ui/Home.py)]
+        BlobUI[3D Blob UI<br>(ui/server.py + assets/)]
+    end
+
+    subgraph Core [Core System]
+        Supervisor[HeathcliffAgent<br>(Singleton Supervisor)]
+        Memory[MemoryManager<br>(ChromaDB)]
+        Mem0[Mem0<br>(Long-term Memory)]
+        Audio[AudioHandler]
+        Approval[ApprovalHandler<br>(Human-in-the-loop)]
+    end
+
+    subgraph LLM [Language Models]
+        SupervisorLLM[Gemini 3 Flash Preview<br>(Supervisor)]
+        ToolLLM[Gemini 2.5 Pro<br>(Tool Calls)]
+    end
+
+    subgraph Domains [Domain Subagents - core/subagents/]
+        Info[Info Agent<br>(Weather, News, Search,<br>Wikipedia, Website Reader)]
+        Music[Music Agent<br>(Spotify)]
+        Email[Email Agent<br>(Gmail)]
+        Calendar[Calendar Agent<br>(Google Calendar)]
+        Contacts[Contacts Agent]
+        Comms[Comms Agent<br>(Telegram, GDrive)]
+    end
+
+    subgraph Skills [Dynamic Skills - skills/]
+        SkillTools[Skill Tools<br>(Master Info, British Persona,<br>Email Safety)]
+    end
+
+    subgraph Observability [Observability]
+        Langfuse[Langfuse<br>(Traces & Events)]
+    end
+
+    subgraph Prompts [Instructions]
+        PromptTemplates[System & User<br>Prompt Templates<br>(XML Delimiters)]
+    end
+
+    %% Edge Connections
+    User <--> Voice
+    User <--> Streamlit
+    User <--> BlobUI
+    
+    Voice --> Supervisor
+    Streamlit --> Supervisor
+    BlobUI --> Supervisor
+    
+    Supervisor <--> Memory
+    Supervisor <--> Mem0
+    Supervisor --> Approval
+    Supervisor --> SupervisorLLM
+    Supervisor --> ToolLLM
+    Supervisor --> PromptTemplates
+
+    %% Supervisor directs to domains/skills
+    Supervisor -.->|Load/Delegate| Info
+    Supervisor -.->|Load/Delegate| Music
+    Supervisor -.->|Load/Delegate| Email
+    Supervisor -.->|Load/Delegate| Calendar
+    Supervisor -.->|Load/Delegate| Contacts
+    Supervisor -.->|Load/Delegate| Comms
+    Supervisor -.->|Load/Delegate| SkillTools
+
+    %% Observability
+    Supervisor -.->|Trace| Langfuse
+
+    %% Stylings
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef llm fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef obs fill:#bfb,stroke:#333,stroke-width:2px;
+    class Supervisor,Memory,Mem0,Audio,Approval core;
+    class SupervisorLLM,ToolLLM llm;
+    class Langfuse obs;

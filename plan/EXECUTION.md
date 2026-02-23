@@ -1,5 +1,7 @@
 # Heathcliff Implementation Plan
 
+> **Historical Document**: This was the original implementation plan. The codebase has since evolved to use a **supervisor + subagents architecture** under `core/subagents/` instead of the flat `tools/` directory described here. For the current architecture, see `plan/MEMORY.md`. For current task tracking, see `plan/TODO.md`.
+
 ## Task 1: Project Setup & Config Manager
 
 **Assign to**: Assistant A
@@ -164,7 +166,7 @@ class AgentState(TypedDict):
 class HeathcliffAgent:
     def __init__(self, config, memory_manager):
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
+            model="gemini-3-flash-preview",
             google_api_key=config.AI_KEY
         )
         self.memory = memory_manager
@@ -400,7 +402,7 @@ def read_gdrive_file(file_id: str):
 
 **Assign to**: Assistant J
 
-**Deliverable**: `ui/streamlit_app.py`
+**Deliverable**: `ui/Home.py` + `ui/pages/`
 
 **Implementation**
 

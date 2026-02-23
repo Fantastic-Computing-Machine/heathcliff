@@ -1,6 +1,6 @@
-# ABOUTME: Master info skill — Adi's live profile, actively updated during conversations
+# ABOUTME: Master info skill — user's live profile, actively updated during conversations
 # ABOUTME: _ACTIVE stores the current state; update_master_info @tool patches it at runtime
-# ABOUTME: Heathcliff calls update_master_info() whenever he learns something new about Adi
+# ABOUTME: Heathcliff calls update_master_info() whenever he learns something new about the user
 
 import copy
 import json
@@ -9,19 +9,19 @@ from typing import Any, Dict, List, Optional
 
 from langchain.tools import tool
 
-from logger import logger
 from config import Config
+from logger import logger
 
 
 # ---------------------------------------------------------------------------
-# Seed data: pulled from config/master_info.py at startup
+# Seed data: pulled from master_info.toml via Config at startup
 # ---------------------------------------------------------------------------
 def _load_seed() -> Dict[str, Any]:
     try:
         return copy.deepcopy(Config.MASTER_INFO)
     except Exception as exc:
         logger.warning(f"[master_info_skill] Could not load seed data: {exc}")
-        return {"name": "Adi", "full_name": "Aditya Agarwal"}
+        return {"name": "User", "full_name": "User"}
 
 
 # Thread-safe mutable profile — the single source of truth at runtime
@@ -59,7 +59,7 @@ def append_to_list_field(field: str, value: str) -> None:
 
 def _format_profile(info: Dict[str, Any]) -> str:
     """Render the active profile as a structured skill prompt."""
-    name = info.get("name", "Adi")
+    name = info.get("name", "User")
     full_name = info.get("full_name", name)
     location = info.get("location", "unknown")
     tz = Config.TZ
@@ -127,7 +127,7 @@ def _format_profile(info: Dict[str, Any]) -> str:
     lines += [
         "",
         "## Rules",
-        "- Address user as 'Adi' always",
+        f"- Address user as '{name}' always",
         "- Use location for local queries (weather, time, etc.)",
         "- Respect schedule when suggesting times or alarms",
         "- Reference favourite artists for unsolicited music suggestions",
@@ -139,8 +139,8 @@ def _format_profile(info: Dict[str, Any]) -> str:
 # Short description for the system prompt (pre-loaded, brief)
 # ---------------------------------------------------------------------------
 MASTER_INFO_DESCRIPTION = (
-    "Adi's live profile: location, schedule, music preferences, interests, and notes. "
-    "Load when personalising responses or referencing Adi's preferences."
+    "User's live profile: location, schedule, music preferences, interests, and notes. "
+    "Load when personalising responses or referencing the user's preferences."
 )
 
 
@@ -151,15 +151,15 @@ def get_skill_content() -> str:
 
 
 # ---------------------------------------------------------------------------
-# @tool — supervisor calls this to update Adi's profile at runtime
+# @tool — supervisor calls this to update the user's profile at runtime
 # ---------------------------------------------------------------------------
 
 
 @tool
 def update_master_info(field: str, value: str) -> str:
-    """Update Adi's active profile when you learn something new about him.
+    """Update the user's active profile when you learn something new about them.
 
-    Use this to persistently record new information about Adi discovered during
+    Use this to persistently record new information about the user discovered during
     the conversation (new preference, schedule change, corrected detail, etc.).
 
     List fields (will APPEND the value):

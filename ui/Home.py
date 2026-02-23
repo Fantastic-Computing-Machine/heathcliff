@@ -174,7 +174,7 @@ if "session_id" not in st.session_state:
 
 if "my_greeting" not in st.session_state:
     st.session_state.my_greeting = generate_greeting(
-        user_name="Adi", include_weather=True
+        user_name=Config.MASTER_INFO.get("name", "User"), include_weather=True
     )
 
 session_state = cast(dict[str, Any], st.session_state)

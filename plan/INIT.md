@@ -1,8 +1,10 @@
 # Heathcliff Project Plan
 
+> **Historical Note**: This was the initial project plan from project inception. The codebase has since evolved significantly. See `plan/MEMORY.md` for the current architecture and `plan/TODO.md` for current task tracking.
+
 ## Architecture Overview
 
-```
+```txt
 ┌─────────────────┐
 │  Audio Input    │ → Wake Word → Voice-to-Text
 └─────────────────┘              ↓
@@ -21,46 +23,61 @@
 
 ## Tech Stack Decisions
 
-**Core**
+### Core
 
 - **STT**: Whisper (local) or Google Speech-to-Text
 - **Wake word**: Porcupine/Picovoice (free tier) or pvporcupine
-- **LLM**: Gemini Flash 2.5 via LangChain
-- **Agent**: LangGraph for tool orchestration
+- **LLM**: Gemini 3 Flash Preview (supervisor) + Gemini 2.5 Pro (tools) via LangChain
+- **Agent**: LangGraph supervisor + subagents orchestration
 - **Vector DB**: ChromaDB (simple, local)
 - **TTS**: Google TTS or ElevenLabs
 
-**Tools Integration**
+### Tools Integration
 
 - Gmail API
 - Spotify Web API
 - OpenWeatherMap
-- Twitter/X API
 - Google Calendar API
 - Telegram Bot API
 - Google Drive API
 - NewsAPI
+- DuckDuckGo Search (primary)
+- Google Custom Search (fallback)
+- Wikipedia API
+- Web content reader (BeautifulSoup)
 
 ## Module Structure
 
-```
+```txt
 heathcliff/
 ├── core/
-│   ├── audio_handler.py      # STT, TTS, wake word
-│   ├── agent_core.py          # LangGraph agent
-│   └── memory_manager.py      # Vector store ops
-├── tools/
-│   ├── email_tool.py
-│   ├── spotify_tool.py
-│   ├── calendar_tool.py
-│   ├── news_tool.py
-│   ├── web_search_tool.py
-│   ├── telegram_tool.py
-│   └── gdrive_tool.py
+│   ├── agent_core.py           # Singleton supervisor agent
+│   ├── audio_handler.py        # STT, TTS, wake word
+│   ├── memory_manager.py       # ChromaDB + Mem0 memory
+│   ├── approval_handler.py     # Human-in-the-loop approval
+│   └── subagents/              # Domain-specific subagents
+│       ├── calendar/           # Google Calendar tools
+│       ├── comms/              # Telegram, Google Drive
+│       ├── contacts/           # Contact management
+│       ├── email/              # Gmail tools
+│       ├── info/               # Weather, News, Web search
+│       └── music/              # Spotify playback
+├── skills/                     # Dynamic skills loaded at runtime
+│   ├── skill_tools.py
+│   ├── skills.py
+│   └── master_info.py
 ├── ui/
-│   └── streamlit_app.py
+│   ├── Home.py                 # Streamlit dashboard
+│   └── server.py               # FastAPI blob server
+├── assets/                     # 3D Blob web frontend
 ├── config/
-│   └── settings.yaml          # API keys, configs
+│   └── config.py               # Class-based config (reads .env + master_info.toml)
+├── instructions/
+│   └── prompts.py              # System/user prompt templates
+├── voice/
+│   └── main.py                 # Wake-word voice entry point
+├── utils/                      # Auth, observability, helpers
+├── master_info.toml            # User profile & preferences
 └── main.py
 ```
 
@@ -119,20 +136,20 @@ while True:
             save_to_vector_db(user_input, response)
 ```
 
-**Agent Pattern**
+### Agent Pattern
 
 - Use LangGraph StateGraph
 - Each tool = node
 - Routing based on intent classification
 - Maintain conversation state across turns
 
-**Memory Strategy**
+### Memory Strategy
 
 - Embed conversations with sentence-transformers
 - Query vector DB for relevant context before LLM call
 - Inject top-k similar conversations into prompt
 
-**Config Management**
+### Config Management
 
 ```yaml
 apis:

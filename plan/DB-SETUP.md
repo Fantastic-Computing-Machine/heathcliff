@@ -1,20 +1,24 @@
 # ChromaDB Multi-Collection Setup
 
+> **Note**: Heathcliff uses **Mem0** for long-term memory (add/search) and **ChromaDB** as the backend for Mem0, chat history, and document indexing. The `MemoryManager` constructor takes no arguments — it reads all configuration from the `Config` singleton. See `config/config.py` for Mem0 and ChromaDB configuration.
+
 ## Structure
 
 ```python
-# core/memory_manager.py
+# core/memory_manager.py (simplified)
 import chromadb
-from chromadb.config import Settings
 
 class MemoryManager:
-    def __init__(self, persist_dir="./chroma_db"):
-        self.client = chromadb.PersistentClient(path=persist_dir)
+    def __init__(self):  # No args — reads from Config singleton
+        # ChromaDB client (local or cloud, depending on Config)
+        client = chroma_client(...)  # Uses Config.CHROMA_* settings
 
         # Collections
-        self.memories = self.client.get_or_create_collection("memories")
-        self.chats = self.client.get_or_create_collection("chat_messages")
-        self.my_data = self.client.get_or_create_collection("my_data")
+        self.chats = client.get_or_create_collection("chat_messages")
+        self.my_data = client.get_or_create_collection("my_data")
+
+        # Mem0 handles long-term memories (separate from ChromaDB collections above)
+        self._mem0 = self._get_mem0_client(client)
 ```
 
 ## Usage Patterns
@@ -73,27 +77,37 @@ def search_my_data(self, query, doc_type=None, n=3):
 from core.memory_manager import MemoryManager
 
 class HeathcliffAgent:
-    def __init__(self):
-        self.memory = MemoryManager()
+    def __init__(self, memory_manager=None):
+        self.memory = memory_manager or MemoryManager()
         self.session_id = str(uuid.uuid4())
 
-    def process(self, user_input):
-        # Get relevant context
-        context = self.memory.get_context(user_input, n=3)
-        memories = self.memory.recall(user_input, n=2)
+    def invoke(self, user_input, session_id=None):
+        # 1. Get pair-based chat context (semantic + chronological)
+        message_history = self.memory.build_message_history(
+            query=user_input, session_id=session_id
+        )
 
-        # Build prompt with context
-        prompt = f"""
-        Relevant memories: {memories['documents']}
-        Recent context: {context['documents']}
-        User: {user_input}
-        """
+        # 2. Get Mem0 long-term memories
+        memories = self.memory.recall(user_input)
 
-        # Get response
-        response = self.llm.invoke(prompt)
+        # 3. Build memories block for USER_PROMPT_TEMPLATE
+        memories_block = self._build_memories_block(memories)
 
-        # Save chat
-        self.memory.save_chat(user_input, response, self.session_id)
+        # 4. Format user prompt with XML delimiters
+        #    <USER_MEMORY_CONTEXT>...memories...</USER_MEMORY_CONTEXT>
+        #    <USER_QUERY>...user_input...</USER_QUERY>
+        user_prompt = USER_PROMPT_TEMPLATE.format(
+            memories_block=memories_block,
+            temporal_context=get_current_temporal_context(),
+            user_query=user_input,
+        )
+
+        # 5. Invoke LangGraph agent with message history + user prompt
+        result = self.agent.invoke({"messages": history + [HumanMessage(user_prompt)]})
+        response = result["messages"][-1].content
+
+        # 6. Save to chat history
+        self.memory.save_chat(user_input, response, session_id)
 
         return response
 ```
@@ -119,8 +133,8 @@ memory.search_my_data("budget report", doc_type="email")
 
 ## Key Points
 
-- **Memories**: Long-term facts (name, preferences, important info)
-- **Chats**: Short-term conversation context (last N messages)
-- **My_data**: Indexed documents (emails, files from GDrive)
+- **Memories (via Mem0)**: Long-term facts (name, preferences, important info) — managed by Mem0 SDK
+- **Chats (ChromaDB)**: Short-term conversation context (pair-based history)
+- **My_data (ChromaDB)**: Indexed documents (emails, files from GDrive)
 
 Embed once, query fast. Use metadata filters for precision.

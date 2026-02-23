@@ -21,7 +21,7 @@ def load_skill(skill_name: str) -> str:
     Only load a skill when it is actually needed — not pre-emptively.
 
     Available skills:
-    - master_info: Adi's live personal profile, schedule, location, and preferences
+    - master_info: User's live personal profile, schedule, location, and preferences
     - british_persona: Tone, British English rules, and wit examples
     - email_safety: Email address rules and confirmation workflow
 

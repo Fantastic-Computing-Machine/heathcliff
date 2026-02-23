@@ -72,7 +72,7 @@ def _build() -> Any:
     description="""Look up contacts from Google Contacts by name, email, or phone.
 
     Call this BEFORE email_agent_tool when you need someone's email address.
-    If the result says "No contact found" — ask Adi for the email before proceeding.
+    If the result says "No contact found" — ask the user for the email before proceeding.
 
     Input: Natural language contact lookup request.
     Example: "Find Philip's email address"

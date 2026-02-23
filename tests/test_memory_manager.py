@@ -816,5 +816,5 @@ class TestEdgeCases:
 
     def test_should_extract_memory_triggers(self, mm):
         assert mm._should_extract_memory("Remember that I like pizza") is True
-        assert mm._should_extract_memory("My name is Adi") is True
+        assert mm._should_extract_memory("My name is Alex") is True
         assert mm._should_extract_memory("I prefer dark mode") is True

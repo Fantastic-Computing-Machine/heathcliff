@@ -198,7 +198,7 @@ def log_langfuse_tool_event(
             "session_id": session_id,
             "status": status,
             "environment": Config.ENVIRONMENT,
-            "user_id": getattr(Config, "LANGFUSE_USER_ID", "adiagarwal"),
+            "user_id": Config.LANGFUSE_USER_ID,
         },
         "level": "DEFAULT",
     }

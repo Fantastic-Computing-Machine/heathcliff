@@ -98,7 +98,7 @@ class TestAgentWithMockedMemory:
         )
 
         session_id = "multi-turn-test"
-        agent.invoke("My name is Adi", session_id=session_id)
+        agent.invoke("My name is Alex", session_id=session_id)
         agent.invoke("What is my name?", session_id=session_id)
 
         # build_message_history should be called once per invoke

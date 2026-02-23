@@ -196,7 +196,7 @@ class TestMasterInfoSkill:
 
         info = get_master_info()
         assert "name" in info
-        assert info["name"] == "Adi"
+        assert info["name"] == "User"
 
     def test_get_master_info_returns_snapshot(self):
         """get_master_info() returns a copy — mutating it doesn't affect _ACTIVE."""
@@ -204,7 +204,7 @@ class TestMasterInfoSkill:
 
         snapshot = get_master_info()
         snapshot["name"] = "Mutated"
-        assert _ACTIVE["name"] == "Adi"
+        assert _ACTIVE["name"] == "User"
 
     def test_set_master_info_field_updates_string(self):
         from skills.master_info import get_master_info, set_master_info_field

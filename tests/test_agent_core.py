@@ -35,7 +35,7 @@ def mock_memory_manager():
     mm = Mock()
     mm.recall = Mock(
         return_value={
-            "documents": [["Adi likes dark mode", "Adi is in Jersey City"]],
+            "documents": [["User likes dark mode", "User is in Jersey City"]],
             "metadatas": [[{"category": "preferences"}, {"category": "location"}]],
             "ids": [["mem_1", "mem_2"]],
             "distances": [[0.05, 0.12]],
@@ -44,13 +44,13 @@ def mock_memory_manager():
     mm.build_message_history = Mock(
         return_value=[
             {"role": "user", "content": "prev: Hello Heathcliff"},
-            {"role": "assistant", "content": "prev: Good morning Adi"},
+            {"role": "assistant", "content": "prev: Good morning."},
         ]
     )
     mm.get_recent_chats = Mock(return_value=[])
     mm.get_chat_context = Mock(
         return_value={
-            "documents": [["prev: Hello Heathcliff", "prev: Good morning Adi"]],
+            "documents": [["prev: Hello Heathcliff", "prev: Good morning."]],
             "metadatas": [
                 [{"role": "user", "session": "sess_abc"}, {"role": "assistant"}]
             ],
@@ -292,7 +292,7 @@ class TestInputValidation:
         """The validation step should not raise for normal input."""
         agent.executor = Mock()
         agent.executor.invoke = Mock(
-            return_value={"messages": [Mock(content="Good day, Adi.")]}
+            return_value={"messages": [Mock(content="Good day.")]}
         )
         agent.invoke("Good morning")
 
@@ -310,7 +310,7 @@ class TestSessionManagement:
         a = _make_agent(mock_memory_manager, mock_subagent_tools)
         a.executor = Mock()
         a.executor.invoke = Mock(
-            return_value={"messages": [Mock(content="Certainly, Adi.")]}
+            return_value={"messages": [Mock(content="Certainly.")]}
         )
         return a
 
@@ -398,7 +398,7 @@ class TestMemoryIntegration:
         assert "Long-term Memory Context:" in final_message.content
         assert "<USER_MEMORY_CONTEXT>" in final_message.content
         assert "</USER_MEMORY_CONTEXT>" in final_message.content
-        assert "- Adi likes dark mode" in final_message.content
+        assert "- User likes dark mode" in final_message.content
         assert "Current Date and Time:" in final_message.content
         assert "Current month:" in final_message.content
         assert "Current year:" in final_message.content
@@ -436,7 +436,7 @@ class TestInvokeContract:
         a = _make_agent(mock_memory_manager, mock_subagent_tools)
         a.executor = Mock()
         a.executor.invoke = Mock(
-            return_value={"messages": [Mock(content="Quite right, Adi.")]}
+            return_value={"messages": [Mock(content="Quite right.")]}
         )
         return a
 

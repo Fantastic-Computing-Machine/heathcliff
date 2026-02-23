@@ -16,7 +16,7 @@ Complete setup instructions for the Heathcliff voice-activated AI assistant.
 
 ## Prerequisites
 
-- **Python**: 3.10 or higher
+- **Python**: 3.11 or higher
 - **Operating System**: Linux, macOS, or Windows with WSL
 - **Microphone**: For voice input
 - **Speakers**: For audio output
@@ -54,19 +54,17 @@ Follow Linux instructions above in your WSL environment.
 
 ## Python Environment
 
-### 1. Create Virtual Environment
+### 1. Install uv (if not already installed)
 
 ```bash
-cd heathcliff
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ### 2. Install Dependencies
 
 ```bash
-pip install --upgrade pip
-pip install -r requirements.txt
+cd heathcliff
+uv sync  # creates .venv from pyproject.toml / uv.lock
 ```
 
 ---
@@ -93,6 +91,7 @@ pip install -r requirements.txt
 5. Place `credentials.json` in the project root directory
 
 **Required Scopes:**
+
 ```
 https://www.googleapis.com/auth/gmail.readonly
 https://www.googleapis.com/auth/gmail.send
@@ -144,7 +143,7 @@ https://www.googleapis.com/auth/drive.readonly
 2. Generate a **Public key** and **Secret key** via **Project Settings → API Keys**.
 3. Copy the base URL for your region (EU: `https://cloud.langfuse.com`, US: `https://us.cloud.langfuse.com`, custom if self-hosting).
 4. Set `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, optional `LANGFUSE_HOST`/`LANGFUSE_RELEASE` inside `.env`.
-5. Run Heathcliff and inspect real-time traces, prompts, and tool usage inside Langfuse. Use `python -m utils.langfuse_client` to verify credentials if nothing appears. Traces default to `user_id=adiagarwal`; update `observability.langfuse.user_id` in `config/config.py` if you want a different alias.
+5. Run Heathcliff and inspect real-time traces, prompts, and tool usage inside Langfuse. Use `python -m utils.langfuse_client` to verify credentials if nothing appears. Update `LANGFUSE_USER_ID` in `config/config.py` if you want a different alias.
 6. The Langfuse LangChain callback reads credentials from environment variables—do not pass them directly into the handler, otherwise new SDK versions throw `unexpected keyword argument 'secret_key'`.
 
 ---
@@ -189,47 +188,42 @@ LANGFUSE_SECRET_KEY=sk_live_...
 LANGFUSE_RELEASE=local-dev
 ```
 
-### 2. Configuration File
+### 2. Master Profile (TOML)
 
-Edit `config/config.py` to customize settings:
+Edit `master_info.toml` in the project root to personalize Heathcliff (name, schedule, preferences, credentials).
 
-```yaml
-# Wake word (must be supported by Porcupine)
-wake_word: "heathcliff"  # or "jarvis", "alexa", "computer", etc.
+- `master_info.toml` supports native comments (`#`) and includes IMPORTANT/OPTIONAL guidance inline.
+- The config loader reads this path via `MASTER_INFO_LOC` in `config/config.py`.
+- If the file is missing, invalid, or empty, startup exits with a clear error.
 
-# TTS settings
-tts:
-  rate: 175        # Words per minute
-  volume: 0.9      # 0.0 to 1.0
+### 3. Runtime Configuration Classes
 
-# News preferences
-news:
-  sources:
-    - bbc-news
-    - techcrunch
-  topics:
-    - technology
-    - artificial-intelligence
-  max_articles: 5
+The `Conf` class in `config/config.py` uses class-based attribute access (not YAML files). Edit `config/config.py` to customise settings. Key config classes:
 
-# Weather
-weather:
-  default_city: "London"
-  units: "metric"  # or "imperial"
+```python
+# RuntimeConf — LLM settings
+SUPERVISOR_MODEL = "google_genai:gemini-3-flash-preview"
+TOOL_MODEL = "google_genai:gemini-2.5-pro"
+TEMPERATURE = 0.5
+MAX_TOKENS = 8192
 
-# Observability
-observability:
-  langfuse:
-    enabled: true
-    base_url: null
-    environment: "local-dev"
-    trace_name: "heathcliff.agent"
+# AudioConfig — Wake word and TTS
+WAKE_WORD = "heathcliff"  # must be supported by Porcupine
+TTS_RATE = 175     # Words per minute
+TTS_VOLUME = 0.9   # 0.0 to 1.0
 
-# LLM settings
-llm:
-  model: "gemini-2.0-flash-exp"
-  temperature: 0.7
-  max_tokens: 1024
+# NewsConfig — News preferences
+DEFAULT_SOURCES = ["bbc-news", "techcrunch", "hacker-news", ...]
+DEFAULT_TOPICS = ["technology", "artificial-intelligence", "science", ...]
+MAX_ARTICLES = 5
+
+# WeatherConfig
+DEFAULT_CITY = "Jersey City"  # or use DEFAULT_CITY env var
+UNITS = "metric"  # or "imperial"
+
+# LangFuseConf — Observability
+TRACE_NAME = "heathcliff.agent"
+ENVIRONMENT = "local-dev"
 ```
 
 ---
@@ -269,7 +263,7 @@ python main.py --text
 ### Streamlit Dashboard
 
 ```bash
-streamlit run ui/streamlit_app.py
+uv run streamlit run ui/Home.py
 ```
 
 Access at `http://localhost:8501`
@@ -292,7 +286,7 @@ Config.validate()
 from core.memory_manager import MemoryManager
 from config import Config
 
-memory = MemoryManager(config=Config)
+memory = MemoryManager()
 memory_id = memory.add_memory("Test memory", category="test")
 results = memory.recall("test")
 print(results)
@@ -305,6 +299,7 @@ python main.py --text
 ```
 
 Try:
+
 - "What's the weather?"
 - "Search for artificial intelligence"
 - "Tell me the time"
@@ -312,7 +307,8 @@ Try:
 ### 4. Test Tools Individually
 
 ```python
-from tools import get_weather, get_news
+# Tools are now accessed via subagent registries
+from core.subagents.info.tools import get_weather, get_news
 
 # Test weather
 print(get_weather.invoke("London"))
@@ -328,12 +324,14 @@ print(get_news.invoke("technology"))
 ### PyAudio Installation Issues
 
 **Linux:**
+
 ```bash
 sudo apt install python3-dev portaudio19-dev
 pip install --force-reinstall pyaudio
 ```
 
 **macOS:**
+
 ```bash
 brew install portaudio
 pip install --global-option='build_ext' --global-option='-I/opt/homebrew/include' --global-option='-L/opt/homebrew/lib' pyaudio
@@ -354,7 +352,7 @@ pip install --global-option='build_ext' --global-option='-I/opt/homebrew/include
 
 - Verify API key is correct
 - Check quota limits in [Google AI Studio](https://makersuite.google.com/)
-- Ensure you're using the correct model name: `gemini-2.0-flash-exp`
+- Ensure you're using the correct model name (check `config/config.py` for `SUPERVISOR_MODEL` and `TOOL_MODEL`)
 
 ### ChromaDB Issues
 
@@ -380,7 +378,7 @@ Adjust device index in `core/audio_handler.py` if needed.
 1. **Add Memories**: Use the Streamlit dashboard to add facts about yourself
 2. **Test Tools**: Try different commands to test each integration
 3. **Customize**: Modify `config/config.py` for your preferences
-4. **Extend**: Add custom tools in `tools/` directory
+4. **Extend**: Add custom subagent tools in `core/subagents/` directory
 
 ---
 
@@ -388,7 +386,7 @@ Adjust device index in `core/audio_handler.py` if needed.
 
 - Check logs in console output
 - Review `logger.py` for debug settings
-- See [CLAUDE.md](.claude/CLAUDE.md) for development info
+- See [AGENTS.md](AGENTS.md) for development guidelines
 - Check [plan/TODO.md](plan/TODO.md) for known issues
 
 ---

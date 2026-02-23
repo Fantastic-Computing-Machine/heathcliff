@@ -1,0 +1,47 @@
+# MASTER PROFILE CONFIGURATION
+# This file personalizes Heathcliff responses.
+
+# IMPORTANT: Core identity and schedule
+name = "User"
+full_name = "User"
+location = "Unknown"
+typical_wake_time = "08:00"
+typical_sleep_time = "00:00"
+email = "[EMAIL_ADDRESS]"
+
+# OPTIONAL: Preferences
+favorite_artists = []
+interests = []
+formality_preference = "casual_professional"
+humor_tolerance = "high"
+notes = []
+
+[work_hours]
+start = "09:00"
+end = "18:00"
+
+# OPTIONAL: Credentials (use "<SKIP>" if not provided)
+[master_credentials]
+linkedin = "<SKIP>"
+github = "<SKIP>"
+twitter = "<SKIP>"
+instagram = "<SKIP>"
+website = "<SKIP>"
+resume = "<SKIP>"
+phone = "<SKIP>"
+
+[master_credentials.location]
+birth = "<SKIP>"
+current = "<SKIP>"
+
+[master_credentials.education.bachelors]
+degree = "<SKIP>"
+branch = "<SKIP>"
+college = "<SKIP>"
+graduation = "<SKIP>"
+
+[master_credentials.education.masters]
+degree = "<SKIP>"
+branch = "<SKIP>"
+college = "<SKIP>"
+graduation = "<SKIP>"

@@ -5,4 +5,6 @@ from config.config import Conf
 
 Config = Conf()
 
-__all__ = ["Config", "Conf"]
+__all__ = [
+    "Config",
+]
