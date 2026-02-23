@@ -7,6 +7,7 @@
 ## Phase 1: Foundation Setup
 
 ### Task 1: Project Setup & Config Manager
+
 - [x] Create project structure (`jarvis/` directories)
 - [x] Create `.env.example` with all API key placeholders
 - [x] Create `config/config.py` with default settings
@@ -15,6 +16,7 @@
 - [x] Test config loading from both env and yaml
 
 ### Task 2: Memory Manager (ChromaDB)
+
 - [x] Implement `core/memory_manager.py`
 - [x] Create 3 collections: memories, chat_messages, my_data
 - [x] Implement `add_memory()` method
@@ -26,6 +28,7 @@
 - [x] Verify persistence across restarts
 
 ### Task 3: Audio Handler (STT/TTS/Wake Word)
+
 - [x] Implement `core/audio_handler.py`
 - [x] Set up Porcupine wake word detection
 - [x] Implement `listen_for_wake_word()` method
@@ -40,6 +43,7 @@
 ## Phase 2: Core Agent
 
 ### Task 4: Gemini Agent Core
+
 - [ ] Implement `core/agent_core.py`
 - [ ] Set up LangChain Google GenAI integration
 - [ ] Define `AgentState` TypedDict
@@ -56,6 +60,7 @@
 ## Phase 3: Tools Integration
 
 ### Task 5: Email Tool
+
 - [x] Implement `tools/email_tool.py`
 - [x] Set up Gmail API OAuth2
 - [x] Implement `read_emails()` tool
@@ -65,6 +70,7 @@
 - [x] Test email sending
 
 ### Task 6: Calendar Tool
+
 - [x] Implement `tools/calendar_tool.py`
 - [x] Set up Calendar API OAuth2
 - [x] Implement `read_my_calendar()` tool (user calendar, read-only)
@@ -74,6 +80,7 @@
 - [x] Test calendar operations
 
 ### Task 7: Spotify Tool
+
 - [x] Implement `tools/spotify_tool.py`
 - [x] Set up Spotify OAuth
 - [x] Implement `play_track()` tool
@@ -83,6 +90,7 @@
 - [x] Test playback control
 
 ### Task 8: Info Tools (News/Weather/Web)
+
 - [x] Implement `tools/info_tools.py`
 - [x] Implement `get_weather()` using OpenWeatherMap
 - [x] Implement `get_news()` using NewsAPI
@@ -92,6 +100,7 @@
 - [x] Test all info tools
 
 ### Task 9: Communication Tools (Telegram/GDrive)
+
 - [x] Implement `tools/comm_tools.py`
 - [x] Set up Telegram Bot API
 - [x] Implement `send_to_telegram()` tool
@@ -106,6 +115,7 @@
 ## Phase 4: UI & Integration
 
 ### Task 10: Streamlit Dashboard
+
 - [ ] Implement `ui/streamlit_app.py`
 - [ ] Create Chat History tab
 - [ ] Create Memories tab (view/add/delete)
@@ -115,6 +125,7 @@
 - [ ] Test UI with real data
 
 ### Task 11: Main Orchestrator
+
 - [ ] Implement `main.py`
 - [ ] Initialize all components
 - [ ] Connect audio → agent → memory pipeline
@@ -128,6 +139,7 @@
 ## Phase 5: Testing & Polish
 
 ### Integration Testing
+
 - [ ] Test wake word → response flow
 - [ ] Test tool calling accuracy
 - [ ] Test memory recall accuracy
@@ -135,6 +147,7 @@
 - [ ] Test error recovery
 
 ### Documentation
+
 - [ ] Write README.md with setup instructions
 - [ ] Document all API key requirements
 - [ ] Document config/config.py options
@@ -142,6 +155,7 @@
 - [ ] Create troubleshooting guide
 
 ### Deployment
+
 - [ ] Create Docker container (optional)
 - [ ] Set up systemd service (optional)
 - [ ] Configure auto-start on boot
@@ -165,19 +179,28 @@
 ## Notes & Blockers
 
 ### Completed
+
 - ✅ Architecture design
 - ✅ Tech stack selection
 - ✅ Task breakdown and dependency mapping
+- ✅ Moved Mem0 recall injection from SystemMessage to dynamic USER_PROMPT_TEMPLATE section (`Long-term Memory Context`)
+- ✅ Reformatted USER_PROMPT_TEMPLATE with structured prompting sections and moved current date/time (including month/year) from system prompt to user prompt context
+- ✅ Wrapped user-prompt memory context and query blocks in XML tags for clearer section boundaries
+- ✅ Refactored `ui/Home.py` to initialize agent components in background so chat input renders immediately (no blocking `init_components` spinner at load)
+- ✅ Restored `MemoryManager` methods required by Chat History page: `get_all_sessions`, `get_session_history`, and `delete_all_chats`; added unit coverage
 
 ### In Progress
+
 - 🔄
 
 ### Blocked
+
 - ⛔
 
 ### Questions/Decisions Needed
+
 -
 
 ---
 
-**Last Updated**: 2025-12-13
+**Last Updated**: 2026-02-22

@@ -19,6 +19,7 @@ dependencies = [
     "langsmith>=0.5.1",
     "mem0ai>=1.0.1",
     "playwright>=1.57.0",
+    "pyowm>=3.5.0",
     "python-dotenv>=1.2.1",
     "python-telegram-bot>=22.5",
     "speechrecognition>=3.14.4",

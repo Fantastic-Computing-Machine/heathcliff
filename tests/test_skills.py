@@ -3,8 +3,9 @@
 
 import os
 import sys
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -132,8 +133,8 @@ class TestLoadSkill:
 
     def test_load_master_info_returns_live_content(self):
         """load_skill('master_info') always returns the current _ACTIVE snapshot."""
+        from skills.master_info import get_master_info, set_master_info_field
         from skills.skill_tools import load_skill
-        from skills.master_info import set_master_info_field, get_master_info
 
         # Patch a known field and verify load_skill reflects it
         set_master_info_field("_test_marker", "pytest_was_here")
@@ -183,8 +184,9 @@ class TestMasterInfoSkill:
 
     def setup_method(self):
         """Reset _ACTIVE to seed values before each test."""
-        from skills import master_info as mi_mod
         import copy
+
+        from skills import master_info as mi_mod
 
         mi_mod._ACTIVE.clear()
         mi_mod._ACTIVE.update(copy.deepcopy(mi_mod._load_seed()))
@@ -198,14 +200,14 @@ class TestMasterInfoSkill:
 
     def test_get_master_info_returns_snapshot(self):
         """get_master_info() returns a copy — mutating it doesn't affect _ACTIVE."""
-        from skills.master_info import get_master_info, _ACTIVE
+        from skills.master_info import _ACTIVE, get_master_info
 
         snapshot = get_master_info()
         snapshot["name"] = "Mutated"
         assert _ACTIVE["name"] == "Adi"
 
     def test_set_master_info_field_updates_string(self):
-        from skills.master_info import set_master_info_field, get_master_info
+        from skills.master_info import get_master_info, set_master_info_field
 
         set_master_info_field("location", "San Francisco, CA")
         assert get_master_info()["location"] == "San Francisco, CA"
@@ -228,7 +230,7 @@ class TestMasterInfoSkill:
         assert count == 1
 
     def test_update_master_info_tool_appends_to_interests(self):
-        from skills.master_info import update_master_info, get_master_info
+        from skills.master_info import get_master_info, update_master_info
 
         result = update_master_info.invoke({"field": "interests", "value": "Surfing"})
         assert (
@@ -239,13 +241,13 @@ class TestMasterInfoSkill:
         assert "Surfing" in get_master_info()["interests"]
 
     def test_update_master_info_tool_sets_location(self):
-        from skills.master_info import update_master_info, get_master_info
+        from skills.master_info import get_master_info, update_master_info
 
         update_master_info.invoke({"field": "location", "value": "Austin, TX"})
         assert get_master_info()["location"] == "Austin, TX"
 
     def test_update_master_info_tool_appends_notes(self):
-        from skills.master_info import update_master_info, get_master_info
+        from skills.master_info import get_master_info, update_master_info
 
         update_master_info.invoke(
             {"field": "notes", "value": "Prefers espresso over drip coffee"}
@@ -254,13 +256,13 @@ class TestMasterInfoSkill:
         assert any("espresso" in n.lower() for n in notes)
 
     def test_update_master_info_tool_sets_custom_field(self):
-        from skills.master_info import update_master_info, get_master_info
+        from skills.master_info import get_master_info, update_master_info
 
         update_master_info.invoke({"field": "favorite_season", "value": "Autumn"})
         assert get_master_info()["favorite_season"] == "Autumn"
 
     def test_update_master_info_reports_duplicate(self):
-        from skills.master_info import update_master_info, get_master_info
+        from skills.master_info import get_master_info, update_master_info
 
         # Add once
         update_master_info.invoke({"field": "interests", "value": "Chess"})
@@ -269,8 +271,9 @@ class TestMasterInfoSkill:
         assert "already" in result.lower() or "knew" in result.lower()
 
     def test_work_hours_update_via_json(self):
-        from skills.master_info import update_master_info, get_master_info
         import json
+
+        from skills.master_info import get_master_info, update_master_info
 
         payload = json.dumps({"start": "11:00", "end": "20:00"})
         update_master_info.invoke({"field": "work_hours", "value": payload})
@@ -280,7 +283,7 @@ class TestMasterInfoSkill:
 
     def test_get_skill_content_reflects_updates(self):
         """get_skill_content() always renders from the current _ACTIVE."""
-        from skills.master_info import update_master_info, get_skill_content
+        from skills.master_info import get_skill_content, update_master_info
 
         update_master_info.invoke({"field": "location", "value": "Denver, CO"})
         content = get_skill_content()
@@ -289,7 +292,8 @@ class TestMasterInfoSkill:
     def test_thread_safety_concurrent_writes(self):
         """Multiple threads updating different fields should not deadlock or corrupt."""
         import threading
-        from skills.master_info import update_master_info, get_master_info
+
+        from skills.master_info import get_master_info, update_master_info
 
         errors = []
 

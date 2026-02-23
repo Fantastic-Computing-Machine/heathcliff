@@ -4,7 +4,6 @@ MASTER_INFO = {
     "name": "Adi",
     "full_name": "Aditya Agarwal",
     "location": "Jersey City",
-    "timezone": "America/New_York",
     "typical_wake_time": "10:00",
     "typical_sleep_time": "03:00",
     "work_hours": {

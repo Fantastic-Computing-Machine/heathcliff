@@ -14,12 +14,18 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from config import Config
 from core.memory_manager import AgentMemoryError
 from core.middleware import create_middleware_stack
-from instructions.prompts import build_system_prompt
+from instructions.prompts import (
+    USER_PROMPT_TEMPLATE,
+    build_system_prompt,
+    get_current_temporal_context,
+)
 from logger import logger
 from utils.langfuse_client import (
     get_langfuse_callback_handler,
     log_langfuse_interaction,
 )
+
+INPUT_MAX_LENGTH = 10000
 
 
 class HeathcliffAgent:
@@ -191,33 +197,23 @@ class HeathcliffAgent:
             )
         return str(content) if content else ""
 
-    def _format_chat_history(
-        self, context_messages: List[Dict[str, Any]], memories: List[str]
-    ) -> List:
-        """Format memories and context as chat history for the agent."""
+    @staticmethod
+    def _build_memories_block(memories: List[str]) -> str:
+        """Build dynamic long-term memory block for the user prompt."""
+        cleaned_memories = [m.strip() for m in memories if isinstance(m, str) and m]
+        if not cleaned_memories:
+            return "None."
+        return "\n".join(f"- {memory}" for memory in cleaned_memories)
+
+    def _format_chat_history(self, message_history: List[Dict[str, Any]]) -> List:
+        """Format pair-based history as LangChain message objects."""
         chat_history: list = []
 
-        if memories:
-            memories_str = "\n".join(f"- {m}" for m in memories)
-            chat_history.append(
-                SystemMessage(content=f"Long-term memories:\n{memories_str}")
-            )
-
-        for msg in context_messages:
-            msg_cls = self._ROLE_TO_MSG.get(msg.get("role"))
-            if msg_cls:
+        for msg in message_history:
+            role = str(msg.get("role", ""))
+            if role in self._ROLE_TO_MSG:
+                msg_cls = self._ROLE_TO_MSG[role]
                 chat_history.append(msg_cls(content=msg.get("content", "")))
-
-        # Prevent the agent from picking tools based on previous queries
-        if chat_history:
-            chat_history.append(
-                SystemMessage(
-                    content="IMPORTANT: Focus ONLY on the user's CURRENT query. "
-                    "The above messages are for context only. Do NOT use tools or "
-                    "take actions based on previous queries - only respond to what "
-                    "the user just asked."
-                )
-            )
 
         return chat_history
 
@@ -244,8 +240,10 @@ class HeathcliffAgent:
         if not user_input or not user_input.strip():
             raise ValueError("User input cannot be empty")
 
-        if len(user_input) > 10000:
-            raise ValueError("User input exceeds maximum length of 10000 characters")
+        if len(user_input) > INPUT_MAX_LENGTH:
+            raise ValueError(
+                f"User input exceeds maximum length of {INPUT_MAX_LENGTH} characters"
+            )
 
         # Generate session_id if not provided
         if not session_id:
@@ -254,19 +252,26 @@ class HeathcliffAgent:
         logger.info("Processing input: '%.50s...' session: %s", user_input, session_id)
 
         try:
-            # Chronological retrieval (n=2) to avoid context bleed
-            context_messages = self.memory_manager.get_recent_chats(
-                session_id=session_id, n=2
+            # Build message history: semantic pairs + recent chronological pairs
+            message_history = self.memory_manager.build_message_history(
+                query=user_input, session_id=session_id
             )
             memories = self._extract_memories(
                 self.memory_manager.recall(query=user_input, n=3)
             )
 
             # Format chat history as messages
-            chat_history = self._format_chat_history(context_messages, memories)
+            chat_history = self._format_chat_history(message_history)
+            memories_block = self._build_memories_block(memories)
 
             # Build message list for graph state
-            messages = chat_history + [HumanMessage(content=user_input)]
+            temporal_context = get_current_temporal_context()
+            formatted_input = USER_PROMPT_TEMPLATE.format(
+                memories_block=memories_block,
+                user_input=user_input,
+                **temporal_context,
+            )
+            messages = chat_history + [HumanMessage(content=formatted_input)]
 
             # Merge callbacks
             all_callbacks = list(self.callbacks)  # Langfuse already included
@@ -349,11 +354,11 @@ class HeathcliffAgent:
             }
             return
 
-        if len(user_input) > 10000:
+        if len(user_input) > INPUT_MAX_LENGTH:
             yield {
                 "type": "error",
                 "message": "User input exceeds maximum length",
-                "data": "Input must be less than 10,000 characters.",
+                "data": f"Input must be less than {INPUT_MAX_LENGTH:,} characters.",
             }
             return
 
@@ -370,9 +375,9 @@ class HeathcliffAgent:
                 "data": {"phase": "retrieval"},
             }
 
-            # Chronological retrieval (n=2) to avoid context bleed
-            context_messages = self.memory_manager.get_recent_chats(
-                session_id=session_id, n=2
+            # Build message history: semantic pairs + recent chronological pairs
+            message_history = self.memory_manager.build_message_history(
+                query=user_input, session_id=session_id
             )
             memories = self._extract_memories(
                 self.memory_manager.recall(query=user_input, n=3)
@@ -384,7 +389,8 @@ class HeathcliffAgent:
                 "data": {"phase": "retrieval_complete", "memories": len(memories)},
             }
 
-            chat_history = self._format_chat_history(context_messages, memories)
+            chat_history = self._format_chat_history(message_history)
+            memories_block = self._build_memories_block(memories)
 
             logger.debug(
                 "CONTEXT DEBUG — input: %s | %d context msgs",
@@ -395,7 +401,13 @@ class HeathcliffAgent:
                 logger.debug("  ctx[%d] %s: %.200s", i, msg.type, msg.content)
 
             # Build message list for graph state
-            messages = chat_history + [HumanMessage(content=user_input)]
+            temporal_context = get_current_temporal_context()
+            formatted_input = USER_PROMPT_TEMPLATE.format(
+                memories_block=memories_block,
+                user_input=user_input,
+                **temporal_context,
+            )
+            messages = chat_history + [HumanMessage(content=formatted_input)]
 
             # Merge callbacks
             all_callbacks = list(self.callbacks)  # Langfuse already included
@@ -515,4 +527,4 @@ class HeathcliffAgent:
 
     def __repr__(self) -> str:
         """String representation of the agent."""
-        return f"<HeathcliffAgent model={Config.MODEL}>"
+        return f"<HeathcliffAgent model={Config.SUPERVISOR_MODEL}>"

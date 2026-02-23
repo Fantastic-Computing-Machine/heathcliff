@@ -4,8 +4,9 @@
 
 import os
 import sys
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -39,6 +40,12 @@ def mock_memory_manager():
             "ids": [["mem_1", "mem_2"]],
             "distances": [[0.05, 0.12]],
         }
+    )
+    mm.build_message_history = Mock(
+        return_value=[
+            {"role": "user", "content": "prev: Hello Heathcliff"},
+            {"role": "assistant", "content": "prev: Good morning Adi"},
+        ]
     )
     mm.get_recent_chats = Mock(return_value=[])
     mm.get_chat_context = Mock(
@@ -79,7 +86,7 @@ def mock_subagent_tools():
 def _make_agent(mock_memory_manager, mock_subagent_tools):
     """Helper: build a HeathcliffAgent with mocked LLM / tools."""
     with (
-        patch("core.agent_core.ChatGoogleGenerativeAI"),
+        patch("core.agent_core.init_chat_model"),
         patch("core.agent_core.create_agent"),
         patch.object(
             __import__("core.agent_core", fromlist=["HeathcliffAgent"]).HeathcliffAgent,
@@ -101,7 +108,7 @@ class TestSingleton:
     """HeathcliffAgent must behave as a singleton."""
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
@@ -114,7 +121,7 @@ class TestSingleton:
         assert a1 is a2
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
@@ -135,7 +142,7 @@ class TestSingleton:
         from core.agent_core import HeathcliffAgent
 
         with (
-            patch("core.agent_core.ChatGoogleGenerativeAI"),
+            patch("core.agent_core.init_chat_model"),
             patch("core.agent_core.create_agent"),
             patch(
                 "core.agent_core.HeathcliffAgent._assemble_default_tools",
@@ -156,13 +163,13 @@ class TestHeathcliffAgentInit:
     """Tests for HeathcliffAgent.__init__ with the singleton + self-wiring arch."""
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_init_with_no_extra_tools(
-        self, _tools, mock_llm_cls, mock_create_agent, mock_memory_manager
+        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """Agent starts with only default tools when no extra_tools given."""
         from core.agent_core import HeathcliffAgent
@@ -171,9 +178,13 @@ class TestHeathcliffAgentInit:
         assert agent._tools == []
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     def test_init_loads_default_tools(
-        self, mock_llm_cls, mock_create_agent, mock_memory_manager, mock_subagent_tools
+        self,
+        mock_init_model,
+        mock_create_agent,
+        mock_memory_manager,
+        mock_subagent_tools,
     ):
         """_assemble_default_tools is called and its result is used."""
         with patch(
@@ -186,13 +197,13 @@ class TestHeathcliffAgentInit:
         assert len(agent._tools) == len(mock_subagent_tools)
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_extra_tools_appended(
-        self, _tools, mock_llm_cls, mock_create_agent, mock_memory_manager
+        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """extra_tools are appended to the default set."""
         from core.agent_core import HeathcliffAgent
@@ -203,31 +214,32 @@ class TestHeathcliffAgentInit:
         assert agent._tools[0] is extra[0]
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_init_creates_llm(
-        self, _tools, mock_llm_cls, mock_create_agent, mock_memory_manager
+        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
     ):
-        """LLM is instantiated with correct config values."""
-        from core.agent_core import HeathcliffAgent
+        """LLM is instantiated via init_chat_model with correct config values."""
         from config import Config
+        from core.agent_core import HeathcliffAgent
 
         HeathcliffAgent(memory_manager=mock_memory_manager)
-        call_kwargs = mock_llm_cls.call_args[1]
-        assert call_kwargs["model"] == Config.MODEL
-        assert call_kwargs["google_api_key"] == Config.GEMINI_API_KEY
+        mock_init_model.assert_called_once()
+        call_kwargs = mock_init_model.call_args[1]
+        assert call_kwargs["model"] == Config.SUPERVISOR_MODEL
+        assert call_kwargs["api_key"] == Config.AI_KEY
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_init_builds_executor(
-        self, _tools, mock_llm_cls, mock_create_agent, mock_memory_manager
+        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """create_agent is called and executor is stored."""
         from core.agent_core import HeathcliffAgent
@@ -237,13 +249,13 @@ class TestHeathcliffAgentInit:
         assert agent.executor is not None
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_init_stores_memory_manager(
-        self, _tools, mock_llm_cls, mock_create_agent, mock_memory_manager
+        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """memory_manager reference is stored."""
         from core.agent_core import HeathcliffAgent
@@ -348,9 +360,9 @@ class TestMemoryIntegration:
         agent.invoke("What do I like?")
         agent.memory_manager.recall.assert_called()
 
-    def test_get_recent_chats_is_called(self, agent):
+    def test_build_message_history_is_called(self, agent):
         agent.invoke("Remind me of our last chat")
-        agent.memory_manager.get_recent_chats.assert_called()
+        agent.memory_manager.build_message_history.assert_called()
 
     def test_save_chat_is_called_with_user_input(self, agent):
         agent.invoke("Test message")
@@ -372,6 +384,43 @@ class TestMemoryIntegration:
             assert isinstance(result, str)
         except Exception:
             pytest.fail("Agent should handle memory errors gracefully")
+
+    def test_memories_are_injected_into_user_prompt(self, agent):
+        """Mem0 recall should be injected into USER_PROMPT_TEMPLATE."""
+        query = "What do I like?"
+        agent.invoke(query)
+
+        invoke_args = agent.executor.invoke.call_args
+        assert invoke_args is not None
+        messages = invoke_args[0][0]["messages"]
+        final_message = messages[-1]
+
+        assert "Long-term Memory Context:" in final_message.content
+        assert "<USER_MEMORY_CONTEXT>" in final_message.content
+        assert "</USER_MEMORY_CONTEXT>" in final_message.content
+        assert "- Adi likes dark mode" in final_message.content
+        assert "Current Date and Time:" in final_message.content
+        assert "Current month:" in final_message.content
+        assert "Current year:" in final_message.content
+        assert "Current User Query:" in final_message.content
+        assert "<USER_QUERY>" in final_message.content
+        assert "</USER_QUERY>" in final_message.content
+        assert query in final_message.content
+        assert final_message.content.strip().endswith("</USER_QUERY>")
+
+    def test_memories_not_injected_as_system_message(self, agent):
+        """Long-term memories should no longer be added as SystemMessage context."""
+        agent.invoke("Hello")
+
+        invoke_args = agent.executor.invoke.call_args
+        assert invoke_args is not None
+        messages = invoke_args[0][0]["messages"]
+
+        assert not any(
+            getattr(message, "type", "") == "system"
+            and "Long-term memories:" in str(getattr(message, "content", ""))
+            for message in messages
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -422,7 +471,7 @@ class TestToolRegistration:
     """Verify supervisor receives exactly the tools registered at init."""
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     def test_all_8_supervisor_tools_registered(
         self, mock_llm, mock_ca, mock_memory_manager
     ):
@@ -444,7 +493,7 @@ class TestToolRegistration:
         assert set(registered_names) == expected
 
     @patch("core.agent_core.create_agent")
-    @patch("core.agent_core.ChatGoogleGenerativeAI")
+    @patch("core.agent_core.init_chat_model")
     def test_no_duplicate_tools(self, mock_llm, mock_ca, mock_memory_manager):
         """No duplicate tool names in the registered list."""
         from core.agent_core import HeathcliffAgent

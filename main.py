@@ -1,14 +1,14 @@
 # ABOUTME: Main entry point for Heathcliff voice assistant
 # ABOUTME: Orchestrates audio, agent, and memory components
 
+import signal
 import sys
 import uuid
-import signal
 
 from config import Config
-from core.memory_manager import MemoryManager, AgentMemoryError
-from core.audio_handler import AudioHandler
 from core.agent_core import HeathcliffAgent
+from core.audio_handler import AudioHandler
+from core.memory_manager import AgentMemoryError, MemoryManager
 from logger import logger
 
 
@@ -133,8 +133,7 @@ def main():
                 print(f"Error: Invalid mode '{mode_value}'. Must be 'text' or 'voice'.")
                 sys.exit(1)
         elif arg in ["--help", "-h"]:
-            print(
-                """
+            print("""
 Heathcliff Voice Assistant
 
 Usage:
@@ -158,8 +157,7 @@ Text Mode:
     - Type your commands
     - Responses are printed to console
     - Useful for testing without audio hardware
-            """
-            )
+            """)
             sys.exit(0)
         else:
             print(f"Error: Unknown argument '{arg}'. Use --help for usage information.")

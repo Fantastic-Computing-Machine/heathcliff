@@ -3,8 +3,9 @@
 
 import os
 import sys
-import streamlit as st
 from datetime import datetime
+
+import streamlit as st
 
 # Add parent directory to path
 sys.path.insert(

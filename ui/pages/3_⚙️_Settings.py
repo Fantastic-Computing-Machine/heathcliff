@@ -148,8 +148,12 @@ with tab3:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("**Model**")
-        model = Config.MODEL
+        st.markdown("**SUPERVISOR_MODEL**")
+        model = Config.SUPERVISOR_MODEL
+        st.code(model, language=None)
+
+        st.markdown("**TOOL_MODEL**")
+        model = Config.TOOL_MODEL
         st.code(model, language=None)
 
         st.markdown("**Parameters**")

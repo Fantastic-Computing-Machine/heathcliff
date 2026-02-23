@@ -1,11 +1,13 @@
 # ABOUTME: Info / research sub-agent — web search, weather, news, Wikipedia
 # ABOUTME: Wraps tools/info_tools.py; exposed to supervisor as a single @tool
 
+from datetime import datetime
 from typing import Any
 
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool
+import pytz
 
 from config import Config
 from core.subagents.info.tools import get_info_tools
@@ -13,6 +15,7 @@ from logger import logger
 
 _SYSTEM_PROMPT = """\
 Act as a specialist research and information retrieval agent dedicated to providing accurate, comprehensive, and strictly formatted answers based on real-time data.
+The current date is: {current_date}.
 
 # Goals
 1. Use available tools (`search_web`, `read_website`) to gather high-quality information.
@@ -72,19 +75,20 @@ _agent = None
 
 def _build() -> Any:
     try:
+        tz = pytz.timezone(Config.TZ)
+        now_str = datetime.now(tz).strftime("%A, %B %d, %Y")
 
         return create_agent(
             model=init_chat_model(
                 api_key=Config.AI_KEY,
                 model=Config.TOOL_MODEL,
-                temperature=0.2,
+                temperature=0.4,
                 timeout=Config.TIMEOUT_SECONDS,
                 max_retries=Config.MAX_RETRIES,
             ),
             tools=get_info_tools(),
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=_SYSTEM_PROMPT.format(current_date=now_str),
             name="Expert Research Information Agent",
-            description="Research, web search, weather, news, Wikipedia lookups, and web scraping.",
         )
     except Exception as exc:
         logger.warning(f"[info_agent] build failed: {exc}")

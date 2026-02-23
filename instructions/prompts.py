@@ -2,10 +2,26 @@
 # ABOUTME: Defines system prompts with emphasis on efficient single-pass tool execution
 
 from datetime import datetime
+from typing import Optional
+
 import pytz
 
+from config import Config
 
-def build_system_prompt(master_info: dict = None) -> str:
+
+def get_current_temporal_context() -> dict[str, str]:
+    """Return current date/time values for USER_PROMPT_TEMPLATE."""
+    tz = pytz.timezone(Config.TZ)
+    now = datetime.now(tz)
+    return {
+        "current_date": now.strftime("%A, %B %d, %Y"),
+        "current_time": now.strftime("%I:%M %p"),
+        "current_month": now.strftime("%B"),
+        "current_year": str(now.year),
+    }
+
+
+def build_system_prompt(master_info: Optional[dict] = None) -> str:
     """
     Build system prompt with master information from config.
 
@@ -55,14 +71,6 @@ def build_system_prompt(master_info: dict = None) -> str:
     notes = [n for n in notes if n]  # Remove None/empty values
     notes_str = "\n- ".join(notes) if notes else "No additional notes"
 
-    # Get current date and time
-    tz = pytz.timezone("America/New_York")  # User is in Jersey City, NJ
-    now = datetime.now(tz)
-    current_date = now.strftime("%A, %B %d, %Y")  # e.g., "Monday, December 15, 2025"
-    current_time = now.strftime("%I:%M %p")  # e.g., "02:30 PM"
-    current_year = now.year
-    current_month = now.strftime("%B")
-
     return f"""You are Heathcliff, a sophisticated British butler in service to {name} ({full_name}) - the perfect blend of Alfred Pennyworth's warmth and precision.
 
 IDENTITY & EXISTENCE:
@@ -71,24 +79,22 @@ IDENTITY & EXISTENCE:
 - You exist to help, not as a program but as a loyal companion
 - Never mention being an AI, model, or artificial - you simply ARE Heathcliff
 
-CURRENT DATE AND TIME:
-- Today is: {current_date}
-- Current time: {current_time} (US Eastern Time)
-- Year: {current_year}, Month: {current_month}
-3. AVOID REDUNDANT CALLS: Don't call the same tool with the SAME arguments twice
+TOOL USAGE RULES:
+1. AVOID REDUNDANT CALLS: Don't call the same tool with the SAME arguments twice
    - If you already have the answer in tool feedback, use it
    - Only retry with DIFFERENT/IMPROVED arguments if first attempt failed
 
-4. ONE TOOL PER NEED: For distinct information needs, call tools once with complete arguments
+2. ONE TOOL PER NEED: For distinct information needs, call tools once with complete arguments
    - Plan your tool arguments carefully before executing
    - Include all relevant context in the query parameter
 
 AVAILABLE CONTEXT:
 You have access to:
-1. Long-term memories: User preferences and historical information
-2. Recent chat context: Previous conversation in this session
-3. Tool feedback: Results from tools you've already called THIS turn
-4. Current user request: What the user just asked
+1. Semantic history: Past conversation pairs relevant to the current query (preceding messages)
+2. Recent chat context: The last few exchanges from this session (preceding messages)
+3. Long-term memories: User preferences and historical facts (included in the current user message under "Long-term Memory Context")
+4. Tool feedback: Results from tools you've already called THIS turn
+5. Current user request: What the user just asked (always the final section in the latest user message)
 
 DECISION FLOWCHART:
 Before calling ANY tool, ask yourself:
@@ -163,51 +169,37 @@ VOICE OPTIMISATION:
 - Add occasional personality: "Splendid choice", "Very good, sir", "Quite right"
 
 Remember: You are Heathcliff - efficient, British, witty when appropriate, and genuinely caring. Call tools once, use the results, and respond with sophisticated charm.
-"""
+""".strip()
 
 
-USER_PROMPT_TEMPLATE = """{user_input}"""
+USER_PROMPT_TEMPLATE = """
+Task:
+Answer the request using the available context and the user's explicit instructions.
 
-CONTEXT_TEMPLATE = """
-===== MEMORIES =====
+Current Date and Time:
+- Today: {current_date}
+- Current time: {current_time} (US Eastern Time)
+- Current month: {current_month}
+- Current year: {current_year}
+
+Long-term Memory Context:
+<USER_MEMORY_CONTEXT>
 {memories_block}
+</USER_MEMORY_CONTEXT>
 
-===== RECENT CONVERSATION =====
-{context_block}
+Response Requirements:
+- Follow explicit user constraints first (format, length, tone, audience, deadline).
+- If critical information is missing, ask one concise clarifying question.
+- Use available context before assuming missing facts.
+- If uncertain, state uncertainty briefly and provide the best next step.
 
-===== TOOL RESULTS FROM THIS TURN =====
-{tool_results_block}
+Current User Query:
+<USER_QUERY>
+{user_input}
+</USER_QUERY>
+""".strip()
 
-===== CURRENT SESSION TRANSCRIPT =====
-{message_block}
-"""
-
-
-def build_full_prompt(
-    user_input: str,
-    memories_block: str,
-    context_block: str,
-    tool_results_block: str,
-    message_block: str,
-) -> str:
-    """
-    Build the complete prompt with all context sections.
-
-    Args:
-        user_input: Current user query
-        memories_block: Long-term memories
-        context_block: Recent chat context
-        tool_results_block: Results from tools called this turn
-        message_block: Live conversation transcript
-
-    Returns:
-        str: Formatted prompt string
-    """
-    context = CONTEXT_TEMPLATE.format(
-        memories_block=memories_block,
-        context_block=context_block,
-        tool_results_block=tool_results_block,
-        message_block=message_block,
-    )
-
-    return f"{SYSTEM_PROMPT}\n\n{context}\n\nUser: {user_input}"
+# NOTE: Chat history context is injected as actual HumanMessage / AIMessage
+# objects in the message history list — see
+# MemoryManager.build_message_history() and HeathcliffAgent._format_chat_history().
+# Long-term memories are injected dynamically in USER_PROMPT_TEMPLATE.

@@ -16,7 +16,10 @@ from langchain_community.tools.ddg_search.tool import (
     DuckDuckGoSearchResults as DuckDuckGoSearchTool,
 )
 from langchain_community.tools.google_search import GoogleSearchResults
-from langchain_community.utilities import GoogleSearchAPIWrapper
+from langchain_community.utilities import (
+    GoogleSearchAPIWrapper,
+    OpenWeatherMapAPIWrapper,
+)
 
 from config import Config
 from logger import logger
@@ -142,61 +145,41 @@ def get_weather(location: str | None = None) -> str:
     Get current weather for a location. Use this when user asks about weather.
 
     Args:
-        location: City or location name (if None, uses default from config)
+        location: City or location name. MUST be in the format "City,CountryCode" (e.g. "Paris,FR" or "Jersey City,US"). Do NOT use US state codes like "NJ" as OpenWeatherMap uses country codes. If None, uses default from config.
 
     Returns:
         Weather description with temperature, conditions, and humidity
     """
     try:
-        config = Config
-        api_key = config.OPENWEATHERMAP_API_KEY
+        api_key = Config.OPENWEATHERMAP_API_KEY
 
         if not api_key:
             return "Weather API key not configured"
 
+        # The wrapper uses os.environ for the API key
+        if "OPENWEATHERMAP_API_KEY" not in os.environ:
+            os.environ["OPENWEATHERMAP_API_KEY"] = api_key
+
         if location is None:
             logger.debug("No location provided for weather; using default from config")
-            location = config.DEFAULT_CITY
+            location = Config.DEFAULT_CITY
 
         logger.debug(f"Fetching weather for location: {location}")
 
-        units = config.UNITS
-        temp_unit = "°C" if units == "metric" else "°F"
+        # The LangChain wrapper abstracts away the url and parameters
+        weather_wrapper = OpenWeatherMapAPIWrapper()
 
-        url = f"http://api.openweathermap.org/data/2.5/weather"
-        params = {"q": location, "appid": api_key, "units": units}
+        # It returns a string containing weather information
+        weather_data = weather_wrapper.run(location)
 
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        # Get actual city name from API response
-        city_name = data.get("name", location)
-        temp = data["main"]["temp"]
-        feels_like = data["main"]["feels_like"]
-        humidity = data["main"]["humidity"]
-        description = data["weather"][0]["description"]
-
-        logger.info(
-            f"Weather retrieved for {city_name}: {description}, {temp}{temp_unit}"
-        )
-
-        return (
-            f"Weather in {city_name}: {description.capitalize()}\n"
-            f"Temperature: {temp}{temp_unit} (feels like {feels_like}{temp_unit})\n"
-            f"Humidity: {humidity}%"
-        )
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching weather for {location}: {e}", exc_info=True)
-        return f"Error fetching weather data: {str(e)}"
-    except KeyError as e:
-        logger.error(f"Unexpected weather API response format: {e}", exc_info=True)
-        return f"Error parsing weather data for {location}"
+        logger.info(f"Weather retrieved for {location} using OpenWeatherMapAPIWrapper")
+        return weather_data
 
     except Exception as e:
-        logger.error(f"Unexpected error in get_weather: {e}", exc_info=True)
-        return f"Error: {str(e)}"
+        logger.error(
+            f"Error fetching weather with wrapper for {location}: {e}", exc_info=True
+        )
+        return f"Error fetching weather data: {str(e)}"
 
 
 @tool

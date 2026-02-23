@@ -4,18 +4,19 @@ import os
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
-from logger import logger
+
 from config.master_info import MASTER_INFO
+from logger import logger
 
 load_dotenv(".env")
 
 
 class MasterConf:
     MASTER_INFO = MASTER_INFO
+    TZ = "America/New_York"
 
 
 class ChromaConf:
-
     USE_REMOTE_CHROMA = os.getenv("USE_REMOTE_CHROMA", "false").lower() == "true"
 
     CHROMA_API_KEY = os.getenv("CHROMA_API_KEY", "")
@@ -28,7 +29,7 @@ class ChromaConf:
 
 class RuntimeConf:
     # Model def
-    MODEL = "gemini-2.5-flash-lite"
+    # MODEL = "gemini-2.5-flash-lite"
     SUPERVISOR_MODEL = "google_genai:gemini-3-flash-preview"
     TOOL_MODEL = "google_genai:gemini-2.5-pro"
     # Supervisor Hyperparameters
@@ -43,7 +44,6 @@ class RuntimeConf:
 class PlatformConf:
     # Google / Gemini API Keys
     AI_KEY = os.getenv("AI_KEY")
-    GEMINI_API_KEY = AI_KEY
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
     GOOGLE_APPLICATION_CREDENTIALS = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"
@@ -73,6 +73,10 @@ class Mem0Conf:
 
     MEMORY_CHAT_CONTEXT = 10
     MEMORY_MAX_MEMORIES = 5
+    # Number of recent chronological message pairs (1 pair = 1 user + 1 AI msg)
+    RECENT_PAIRS_COUNT = 6
+    # Number of semantic history message pairs retrieved per query
+    SEMANTIC_PAIRS_COUNT = 3
 
     MEMORY_COLLECTION = "heathcliff_memories"
 
@@ -202,4 +206,4 @@ class Conf(
         logger.info(f"Configuration validated successfully!")
 
     def __repr__(self) -> str:
-        return f"<Config wake_word='{self.WAKE_WORD}' model='{self.MODEL}'>"
+        return f"<Config wake_word='{self.WAKE_WORD}' model='{self.SUPERVISOR_MODEL}'>"

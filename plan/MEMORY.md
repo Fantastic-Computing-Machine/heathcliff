@@ -60,10 +60,13 @@ heathcliff/
 - **Invocation**: `graph.invoke({"messages": [HumanMessage(...)]})` → response at `result["messages"][-1].content`.
 - **Gemini Response Format**: Content may be `[{'type': 'text', 'text': '...'}]` — extract text parts before saving.
 - **Memory**: Mem0 SDK in-process for memory add/search; ChromaDB for chat/docs. Chroma Cloud backend.
+- **Prompt Context Injection (2026-02-22)**: Pair-based semantic/recent chat context is injected as preceding `HumanMessage`/`AIMessage` objects, while Mem0 recall is injected into `USER_PROMPT_TEMPLATE` under `Long-term Memory Context` (not as a `SystemMessage`).
+- **Temporal Context Injection (2026-02-22)**: Current date/time metadata (including month/year) is now injected into `USER_PROMPT_TEMPLATE` at invoke-time via `get_current_temporal_context()`.
+- **User Prompt XML Delimiters (2026-02-22)**: `USER_PROMPT_TEMPLATE` now wraps long-term memory and current user query in XML tags (`<USER_MEMORY_CONTEXT>`, `<USER_QUERY>`) to improve boundary adherence.
 - **Credentials**: `utils/google_auth.get_google_credentials()` — cached per scope/token tuple.
 - **Approval**: `StreamlitApprovalHandler` intercepts `SENSITIVE_TOOLS` (send_email, create_event, etc.) via `on_tool_start` hook. Approve/Modify/Reject in Streamlit UI.
 - **Middleware**: Framework exists in `core/middleware.py` (6 types) but **all disabled** — LangGraph callback interface incompatible with LangChain middleware.
-- **Context Window**: Chat history limited to `n=2` (1 turn) in invoke/stream_invoke to prevent tool selection bleed between queries.
+- **Context Window**: Retrieval now uses pair-aware history (`build_message_history`) with semantic pairs first and recent chronological pairs next.
 
 ### Operational Notes
 
@@ -83,6 +86,35 @@ heathcliff/
 ---
 
 ## Timeline (Latest Activity)
+
+- **2026-02-22**: **Fixed Chat History page memory API mismatch** ✅
+  - Added `MemoryManager.get_all_sessions()` to aggregate session summaries (`session_id`, `start_time`, `msg_count`) from `chat_messages` metadata for `ui/pages/4_💬_Chat_History.py`.
+  - Added `MemoryManager.get_session_history(session_id)` to return full session messages sorted chronologically via existing `_sort_key`.
+  - Added `MemoryManager.delete_all_chats()` to support global history deletion used by Chat History danger-zone UI.
+  - Added unit tests in `tests/test_memory_manager.py` covering normal + error paths for all three methods.
+  - Verified with `uv run pytest tests/test_memory_manager.py -v` (39 passed).
+
+- **2026-02-22**: **Streamlit Home non-blocking initialization** ✅
+  - Refactored `ui/Home.py` to remove blocking top-level `init_components()` execution that showed Streamlit's `init_components` spinner before UI render.
+  - Added background initialization thread (`_initialize_components_background`) with guarded shared state so the chat input renders immediately on page load.
+  - Sidebar now shows `Initializing core components in background...` while booting, then switches to Ready metrics when initialization completes.
+  - Added `st.fragment(run_every=1)` watcher to auto-rerun once background init finishes/fails so UI status flips to Ready/Error without manual interaction.
+  - Chat submission now handles init state gracefully: shows a wait warning during warmup and an explicit failure message if initialization errors.
+  - Updated `Reload Agent` behavior to reset background init state and restart initialization asynchronously.
+
+- **2026-02-22**: **User prompt redesign + datetime move** ✅
+  - Reformatted `USER_PROMPT_TEMPLATE` in `instructions/prompts.py` using structured sections (`Task`, `Current Date and Time`, `Long-term Memory Context`, `Response Requirements`, `Current User Query`) for stronger prompt adherence.
+  - Moved runtime date/time details out of `build_system_prompt()` into the user prompt path.
+  - Added `get_current_temporal_context()` and wired it in `core/agent_core.py` for both `invoke()` and `stream_invoke()`.
+  - Updated tests in `tests/test_agent_core.py` to assert date/month/year metadata appears in the final user prompt payload.
+  - Added XML wrappers around long-term memory and current query blocks in `USER_PROMPT_TEMPLATE`; updated tests to assert the new tags.
+  - Updated `instructions/README.md` to match the current context injection design.
+
+- **2026-02-22**: **Prompt injection update for Mem0 recall** ✅
+  - Updated `core/agent_core.py` so Mem0 recall is formatted into a dynamic `memories_block` and injected through `USER_PROMPT_TEMPLATE`.
+  - Removed long-term memory injection as `SystemMessage`; chat history now contains pair-based messages only before the final user message.
+  - Updated `instructions/prompts.py` with explicit sections (`Long-term Memory Context`, `Current User Query`) and aligned context guidance.
+  - Added/updated tests in `tests/test_agent_core.py` to assert memory prompt injection and absence of memory `SystemMessage` context.
 
 - **2026-02-21**: **Blob UI cleanup** — Removed dead Streamlit component protocol from `blob.js` (standalone blob has no Streamlit dependency). Updated `MEMORY.md` paths.
 

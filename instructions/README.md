@@ -8,30 +8,29 @@ This directory contains centralized prompt templates and instructions for the He
 
 Core prompt templates for the agent, including:
 
-- **`SYSTEM_PROMPT`**: Main system instruction that defines Heathcliff's behavior, emphasizing:
+- **`build_system_prompt(master_info)`**: Builds the main system instruction that defines Heathcliff's behavior, emphasizing:
   - Concise, voice-optimized responses
   - **Single-pass tool execution** to prevent redundant API calls
   - Context-aware decision making
   - Natural conversation flow
+  - Tool usage rules (never call the same tool twice, check feedback first)
 
-- **`CONTEXT_TEMPLATE`**: Format for organizing context sections (memories, chat history, tool results)
-
-- **`build_full_prompt()`**: Helper function to assemble complete prompts
+Prompt context architecture:
+- **Long-term memories** from Mem0 are injected into `USER_PROMPT_TEMPLATE` under `Long-term Memory Context`.
+- **Current date/time metadata** is injected into `USER_PROMPT_TEMPLATE` for each invocation.
+- **Semantic history pairs** (past conversations from all sessions, retrieved by similarity to the current query) appear as `HumanMessage`/`AIMessage` objects before the recent history.
+- **Recent chat pairs** (last N turns from the current session) appear chronologically right before the current user message.
 
 ## Anti-Redundancy Features
 
 The prompts in this directory are specifically designed to **reduce redundant tool calls** and lower API costs:
 
-1. **Explicit tool usage rules** in `SYSTEM_PROMPT`:
+1. **Explicit tool usage rules** in the system prompt:
    - "NEVER call the same tool multiple times for one user request"
    - "ALWAYS check tool feedback first"
    - Decision flowchart before any tool call
 
-2. **Clear tool result presentation**:
-   - Tool feedback is prominently displayed with checkmarks
-   - Messages emphasize "DO NOT re-call these tools"
-
-3. **Combined with agent logic**:
+2. **Combined with agent logic**:
    - Max iteration limit (default: 3) in `core/agent_core.py`
    - Duplicate tool call filtering
    - Iteration count tracking
@@ -41,21 +40,17 @@ The prompts in this directory are specifically designed to **reduce redundant to
 The prompts are imported and used by `core/agent_core.py`:
 
 ```python
-from instructions.prompts import SYSTEM_PROMPT
+from instructions.prompts import build_system_prompt
 
-# In _build_prompt_template():
-ChatPromptTemplate.from_messages([
-    ("system", SYSTEM_PROMPT),
-    ("system", "Tool feedback (DO NOT re-call these tools):\n{tool_results_block}"),
-    # ...
-])
+# System prompt is built with master info from config:
+system_prompt = build_system_prompt(master_info=config.master)
 ```
 
 ## Customization
 
 To modify Heathcliff's behavior:
 
-1. Edit `SYSTEM_PROMPT` in `prompts.py`
+1. Edit `build_system_prompt()` in `prompts.py`
 2. Adjust response style, tool usage rules, or voice optimization guidelines
 3. Changes take effect immediately on agent restart
 

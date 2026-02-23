@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from langchain.tools import tool
 
 from logger import logger
+from config import Config
 
 
 # ---------------------------------------------------------------------------
@@ -17,9 +18,7 @@ from logger import logger
 # ---------------------------------------------------------------------------
 def _load_seed() -> Dict[str, Any]:
     try:
-        from config.master_info import MASTER_INFO
-
-        return copy.deepcopy(MASTER_INFO)
+        return copy.deepcopy(Config.MASTER_INFO)
     except Exception as exc:
         logger.warning(f"[master_info_skill] Could not load seed data: {exc}")
         return {"name": "Adi", "full_name": "Aditya Agarwal"}
@@ -63,7 +62,7 @@ def _format_profile(info: Dict[str, Any]) -> str:
     name = info.get("name", "Adi")
     full_name = info.get("full_name", name)
     location = info.get("location", "unknown")
-    tz = info.get("timezone", "America/New_York")
+    tz = Config.TZ
     wake = info.get("typical_wake_time", "10:00")
     sleep = info.get("typical_sleep_time", "03:00")
     work = info.get("work_hours", {}) or {}

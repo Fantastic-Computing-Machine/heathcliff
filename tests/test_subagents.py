@@ -3,8 +3,9 @@
 
 import os
 import sys
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -364,9 +365,9 @@ class TestMultiStepChaining:
         Step 2: contacts_agent_tool → returns Philip's email
         Step 3: email_agent_tool → sends email
         """
-        import core.subagents.info.agent as info_mod
         import core.subagents.contacts.agent as contacts_mod
         import core.subagents.email.agent as email_mod
+        import core.subagents.info.agent as info_mod
 
         def _mock_agent(text):
             m = Mock()
@@ -436,8 +437,8 @@ class TestMultiStepChaining:
         Simulates: 'play Taylor Swift and tell me the weather'
         Two independent agent calls — both should succeed.
         """
-        import core.subagents.music.agent as music_mod
         import core.subagents.info.agent as info_mod
+        import core.subagents.music.agent as music_mod
 
         def _mk(text):
             m = Mock()
