@@ -173,3 +173,6 @@ credentials.json
 token.json
 uv.lock
 .mycache
+
+# Recent context runtime store
+temp/

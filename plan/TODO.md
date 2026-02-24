@@ -108,7 +108,11 @@
 - [x] Add YouTube search tool integration
 - [x] Add `recent_context()` tool for recency-grounded answers
 - [x] Move `recent_context()` into dedicated module (`core/subagents/info/recent_context.py`)
+- [x] Upgrade `recent_context` to JSON-backed persistent store (TTL, max items, atomic writes, thread lock, auto-path)
+- [x] Add `RecentContextConfig` to config with 5 env-var-backed params
+- [x] Write 22-test suite for `recent_context` (`tests/test_recent_context.py`)
 - [x] Always include `recent_context` in LLM tool-selector middleware
+- [x] Fix all test suites for middleware mock + updated tool counts (184 passed)
 - [x] Register tools with LangChain
 - [x] Test all info tools
 

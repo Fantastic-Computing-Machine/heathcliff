@@ -61,6 +61,7 @@ def _make_agent(memory_manager, executor_response="Hello! I'm Heathcliff."):
     with (
         patch("core.agent_core.init_chat_model"),
         patch("core.agent_core.create_agent") as mock_ca,
+        patch("core.agent_core.create_middleware_stack", return_value=[]),
     ):
         mock_executor = Mock()
         mock_executor.invoke = Mock(

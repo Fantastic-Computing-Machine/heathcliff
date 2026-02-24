@@ -24,11 +24,11 @@ class TestSubagentRegistry:
         tools = get_all_subagent_tools()
         assert isinstance(tools, list)
 
-    def test_get_all_subagent_tools_returns_6_tools(self):
+    def test_get_all_subagent_tools_returns_7_tools(self):
         from core.subagents import get_all_subagent_tools
 
         tools = get_all_subagent_tools()
-        assert len(tools) == 6
+        assert len(tools) == 7
 
     def test_all_expected_tools_present(self):
         from core.subagents import get_all_subagent_tools
@@ -41,6 +41,7 @@ class TestSubagentRegistry:
             "calendar_agent_tool",
             "contacts_agent_tool",
             "comms_agent_tool",
+            "recent_context",
         }
         assert names == expected
 
@@ -55,9 +56,9 @@ class TestSubagentRegistry:
         from core.subagents import get_all_subagent_tools
 
         for tool in get_all_subagent_tools():
-            assert hasattr(
-                tool, "description"
-            ), f"Tool missing .description: {tool.name}"
+            assert hasattr(tool, "description"), (
+                f"Tool missing .description: {tool.name}"
+            )
             assert len(tool.description) > 0
 
     def test_no_duplicate_tool_names(self):

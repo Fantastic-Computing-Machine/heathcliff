@@ -188,6 +188,19 @@ class WeatherConfig:
     UNITS = os.getenv("WEATHER_UNITS", "metric")
 
 
+class RecentContextConfig:
+    # Recent context snippet store
+    RECENT_CONTEXT_TTL_SECONDS = int(os.getenv("RECENT_CONTEXT_TTL_SECONDS", "7200"))
+    RECENT_CONTEXT_MAX_ITEMS = int(os.getenv("RECENT_CONTEXT_MAX_ITEMS", "100"))
+    RECENT_CONTEXT_MAX_SNIPPET_CHARS = int(
+        os.getenv("RECENT_CONTEXT_MAX_SNIPPET_CHARS", "1200")
+    )
+    RECENT_CONTEXT_MAX_RETURN = int(os.getenv("RECENT_CONTEXT_MAX_RETURN", "5"))
+    RECENT_CONTEXT_STORE_PATH = os.getenv(
+        "RECENT_CONTEXT_STORE_PATH", "temp/recent_memory.json"
+    )
+
+
 class AudioConfig:
     WAKE_WORD = "heathcliff"
     SAMPLE_RATE = 16000
@@ -206,6 +219,7 @@ class Conf(
     LangFuseConf,
     NewsConfig,
     WeatherConfig,
+    RecentContextConfig,
     AudioConfig,
 ):
     _instance: Optional["Conf"] = None

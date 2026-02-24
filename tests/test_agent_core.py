@@ -88,6 +88,7 @@ def _make_agent(mock_memory_manager, mock_subagent_tools):
     with (
         patch("core.agent_core.init_chat_model"),
         patch("core.agent_core.create_agent"),
+        patch("core.agent_core.create_middleware_stack", return_value=[]),
         patch.object(
             __import__("core.agent_core", fromlist=["HeathcliffAgent"]).HeathcliffAgent,
             "_assemble_default_tools",
@@ -109,11 +110,12 @@ class TestSingleton:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
-    def test_same_instance_returned(self, _tools, _llm, _ca, mock_memory_manager):
+    def test_same_instance_returned(self, _tools, _mw, _llm, _ca, mock_memory_manager):
         from core.agent_core import HeathcliffAgent
 
         a1 = HeathcliffAgent(memory_manager=mock_memory_manager)
@@ -122,11 +124,14 @@ class TestSingleton:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
-    def test_instance_returns_singleton(self, _tools, _llm, _ca, mock_memory_manager):
+    def test_instance_returns_singleton(
+        self, _tools, _mw, _llm, _ca, mock_memory_manager
+    ):
         from core.agent_core import HeathcliffAgent
 
         HeathcliffAgent(memory_manager=mock_memory_manager)
@@ -144,6 +149,7 @@ class TestSingleton:
         with (
             patch("core.agent_core.init_chat_model"),
             patch("core.agent_core.create_agent"),
+            patch("core.agent_core.create_middleware_stack", return_value=[]),
             patch(
                 "core.agent_core.HeathcliffAgent._assemble_default_tools",
                 return_value=[],
@@ -164,12 +170,13 @@ class TestHeathcliffAgentInit:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_init_with_no_extra_tools(
-        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
+        self, _tools, _mw, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """Agent starts with only default tools when no extra_tools given."""
         from core.agent_core import HeathcliffAgent
@@ -179,8 +186,10 @@ class TestHeathcliffAgentInit:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
     def test_init_loads_default_tools(
         self,
+        _mw,
         mock_init_model,
         mock_create_agent,
         mock_memory_manager,
@@ -198,12 +207,13 @@ class TestHeathcliffAgentInit:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_extra_tools_appended(
-        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
+        self, _tools, _mw, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """extra_tools are appended to the default set."""
         from core.agent_core import HeathcliffAgent
@@ -215,12 +225,13 @@ class TestHeathcliffAgentInit:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_init_creates_llm(
-        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
+        self, _tools, _mw, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """LLM is instantiated via init_chat_model with correct config values."""
         from config import Config
@@ -234,12 +245,13 @@ class TestHeathcliffAgentInit:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_init_builds_executor(
-        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
+        self, _tools, _mw, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """create_agent is called and executor is stored."""
         from core.agent_core import HeathcliffAgent
@@ -250,12 +262,13 @@ class TestHeathcliffAgentInit:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
     @patch(
         "core.agent_core.HeathcliffAgent._assemble_default_tools",
         return_value=[],
     )
     def test_init_stores_memory_manager(
-        self, _tools, mock_init_model, mock_create_agent, mock_memory_manager
+        self, _tools, _mw, mock_init_model, mock_create_agent, mock_memory_manager
     ):
         """memory_manager reference is stored."""
         from core.agent_core import HeathcliffAgent
@@ -472,10 +485,11 @@ class TestToolRegistration:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
-    def test_all_8_supervisor_tools_registered(
-        self, mock_llm, mock_ca, mock_memory_manager
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
+    def test_all_9_supervisor_tools_registered(
+        self, _mw, mock_llm, mock_ca, mock_memory_manager
     ):
-        """Full supervisor tool list: 6 subagents + load_skill + update_master_info."""
+        """Full supervisor tool list: 6 subagents + recent_context + load_skill + update_master_info."""
         from core.agent_core import HeathcliffAgent
 
         HeathcliffAgent(memory_manager=mock_memory_manager)
@@ -487,6 +501,7 @@ class TestToolRegistration:
             "calendar_agent_tool",
             "contacts_agent_tool",
             "comms_agent_tool",
+            "recent_context",
             "load_skill",
             "update_master_info",
         }
@@ -494,7 +509,8 @@ class TestToolRegistration:
 
     @patch("core.agent_core.create_agent")
     @patch("core.agent_core.init_chat_model")
-    def test_no_duplicate_tools(self, mock_llm, mock_ca, mock_memory_manager):
+    @patch("core.agent_core.create_middleware_stack", return_value=[])
+    def test_no_duplicate_tools(self, _mw, mock_llm, mock_ca, mock_memory_manager):
         """No duplicate tool names in the registered list."""
         from core.agent_core import HeathcliffAgent
 

@@ -80,10 +80,10 @@ heathcliff/
 - **User Prompt XML Delimiters (2026-02-22)**: `USER_PROMPT_TEMPLATE` now wraps long-term memory and current user query in XML tags (`<USER_MEMORY_CONTEXT>`, `<USER_QUERY>`) to improve boundary adherence.
 - **Credentials**: `utils/google_auth.get_google_credentials()` — cached per scope/token tuple.
 - **Approval**: `StreamlitApprovalHandler` intercepts `SENSITIVE_TOOLS` (send_email, create_event, etc.) via `on_tool_start` hook. Approve/Modify/Reject in Streamlit UI.
-- **Middleware**: Framework exists in `core/middleware.py` (6 types) but **all disabled** — LangGraph callback interface incompatible with LangChain middleware.
+- **Middleware (2026-02-23)**: Framework exists in `core/middleware.py` — `LLMToolSelectorMiddleware`, `ToolCallLimitMiddleware`, and `TodoListMiddleware` are active. `always_include=["recent_context"]` ensures recency tool stays available. Tests mock `create_middleware_stack` to avoid `langchain_openai` import dependency.
 - **Middleware Tool Selection (2026-02-23)**: `LLMToolSelectorMiddleware` now sets `always_include=["recent_context"]` so recency snippets remain selectable even when other tools are filtered.
 - **Context Window**: Retrieval now uses pair-aware history (`build_message_history`) with semantic pairs first and recent chronological pairs next.
-- **Info Tooling (2026-02-23)**: `core/subagents/info/tools.py` now includes optional LangChain community wrappers for Yahoo Finance news and YouTube search, plus a `recent_context` tool backed by a small in-memory recency buffer populated from successful info-tool outputs.
+- **Info Tooling (2026-02-23)**: `core/subagents/info/tools.py` now includes optional LangChain community wrappers for Yahoo Finance news and YouTube search, plus a `recent_context` tool backed by a **JSON-backed persistent store** (`temp/recent_memory.json`) with configurable TTL (2h), max items (100), atomic writes, thread lock, stale-entry cleanup, corrupt-file recovery, and auto-path setup on module load. Config lives in `RecentContextConfig` (5 env vars) wired into the `Conf` MRO. The tool is also registered at supervisor level via `_assemble_default_tools()` (9 tools total: 6 subagents + recent_context + load_skill + update_master_info).
 
 ### Operational Notes
 
@@ -94,7 +94,8 @@ heathcliff/
 
 ### Known Issues
 
-- Middleware disabled due to LangGraph incompatibility (missing `raise_error`/`ignore_chain` attributes).
+- Middleware disabled due to LangGraph incompatibility (missing `raise_error`/`ignore_chain` attributes). — **Resolved 2026-02-23**: middleware stack is now active (`ToolCallLimitMiddleware`, `TodoListMiddleware`, `LLMToolSelectorMiddleware`).
+- Tests require `create_middleware_stack` to be mocked (the `LLMToolSelectorMiddleware` internally imports `langchain_openai` which isn't installed in the test env).
 - Voice listener concurrency not fully tested.
 - Gmail/Calendar/Spotify rate limits need backoff/retry logic.
 - PyAudio is platform-dependent — test on target systems early.
@@ -103,6 +104,16 @@ heathcliff/
 ---
 
 ## Timeline (Latest Activity)
+
+- **2026-02-23**: **JSON-backed persistent recent context store + test suite green** ✅
+  - Rewrote `core/subagents/info/recent_context.py` from in-memory list to JSON-backed persistent store: `temp/recent_memory.json` with configurable TTL (2h), max items (100), atomic writes (`.tmp` + `os.replace()`), `threading.Lock`, stale cleanup on every read/write, corrupt-file recovery, and auto-path setup on module load.
+  - Added `RecentContextConfig` to `config/config.py` with 5 env-var-backed params (`RECENT_CONTEXT_TTL_SECONDS`, `RECENT_CONTEXT_MAX_ITEMS`, `RECENT_CONTEXT_MAX_SNIPPET_CHARS`, `RECENT_CONTEXT_MAX_RETURN`, `RECENT_CONTEXT_STORE_PATH`).
+  - Created `tests/test_recent_context.py` with 22 tests (persistence roundtrip, TTL expiry, max-items pruning, corrupt JSON fallback, return ordering/clamping, content filtering, auto-path setup).
+  - Fixed test helper `_read_store()` to handle file-not-created case (empty/error content filtered before first write).
+  - Updated `tests/test_subagents.py` to expect 7 tools (6 agents + `recent_context`).
+  - Updated `tests/test_agent_core.py`, `tests/test_agent_e2e.py`, `tests/test_agent_integration.py` to mock `create_middleware_stack` (avoids `langchain_openai` import in test env).
+  - Updated `tests/test_agent_core.py::TestToolRegistration` to expect 9 supervisor tools (added `recent_context`).
+  - **Full suite: 184 passed, 0 failed, 0 errors.**
 
 - **2026-02-23**: **Tool selector always includes recent context** ✅
   - Updated `core/middleware.py` to define `ALWAYS_INCLUDE_TOOL_NAMES = ["recent_context"]`.
@@ -219,6 +230,6 @@ heathcliff/
 
 ## Project Status
 
-**Phases 1–4 Complete** ✅ — Subagents architecture refactor, skills framework (3 skills), Mem0 memory, 3D Blob UI, Langfuse observability, master profile TOML migration, user reference generalization, weather API LangChain wrapper all completed. **Phase 5 (Testing & Polish) In Progress** ⏳
+**Phases 1–4 Complete** ✅ — Subagents architecture refactor, skills framework (3 skills), Mem0 memory, 3D Blob UI, Langfuse observability, master profile TOML migration, user reference generalization, weather API LangChain wrapper, JSON-backed recent context store, middleware stack (tool selector + call limits + todo list) all completed. Full test suite: 184 passed. **Phase 5 (Testing & Polish) In Progress** ⏳
 
 Next steps: Integration testing, error recovery, Docker containerization, troubleshooting guide.
