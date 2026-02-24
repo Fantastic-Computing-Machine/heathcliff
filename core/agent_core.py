@@ -24,6 +24,7 @@ from utils.langfuse_client import (
     get_langfuse_callback_handler,
     log_langfuse_interaction,
 )
+from langfuse import propagate_attributes
 
 INPUT_MAX_LENGTH = 10000
 
@@ -118,16 +119,7 @@ class HeathcliffAgent:
 
         self.max_iterations = Config.MAX_ITERATIONS
         self.callbacks: List[Any] = []
-
-        langfuse_handler = get_langfuse_callback_handler()
-        if langfuse_handler:
-            self.callbacks.append(langfuse_handler)
-            logger.info("Langfuse callback handler enabled")
-        else:
-            logger.info(
-                "Langfuse callback handler unavailable; "
-                "falling back to manual trace events only"
-            )
+        logger.info("Callbacks initialized; Langfuse injected per-request")
 
         self.llm = init_chat_model(
             api_key=Config.AI_KEY,
@@ -274,15 +266,25 @@ class HeathcliffAgent:
             messages = chat_history + [HumanMessage(content=formatted_input)]
 
             # Merge callbacks
-            all_callbacks = list(self.callbacks)  # Langfuse already included
+            all_callbacks = list(self.callbacks)
+
+            # Inject Langfuse handler dynamically per-session
+            langfuse_handler = get_langfuse_callback_handler()
+            if langfuse_handler:
+                all_callbacks.append(langfuse_handler)
+
             if additional_callbacks:
                 all_callbacks.extend(additional_callbacks)
 
             # Invoke graph - handles iterations, tool calls, everything!
-            result = self.executor.invoke(
-                {"messages": messages},
-                config={"callbacks": all_callbacks} if all_callbacks else None,
-            )
+            with propagate_attributes(
+                session_id=session_id,
+                user_id=Config.LANGFUSE_USER_ID,
+            ):
+                result = self.executor.invoke(
+                    {"messages": messages},
+                    config={"callbacks": all_callbacks} if all_callbacks else None,
+                )
 
             # Extract response from final message
             final_messages = result.get("messages", [])
@@ -410,7 +412,13 @@ class HeathcliffAgent:
             messages = chat_history + [HumanMessage(content=formatted_input)]
 
             # Merge callbacks
-            all_callbacks = list(self.callbacks)  # Langfuse already included
+            all_callbacks = list(self.callbacks)
+
+            # Inject Langfuse handler dynamically per-session
+            langfuse_handler = get_langfuse_callback_handler()
+            if langfuse_handler:
+                all_callbacks.append(langfuse_handler)
+
             if additional_callbacks:
                 all_callbacks.extend(additional_callbacks)
 
@@ -418,63 +426,69 @@ class HeathcliffAgent:
             final_response = ""
             tools_used = []
 
-            for chunk in self.executor.stream(
-                {"messages": messages},
-                config={"callbacks": all_callbacks} if all_callbacks else None,
+            with propagate_attributes(
+                session_id=session_id,
+                user_id=Config.LANGFUSE_USER_ID,
             ):
-                logger.debug(
-                    "Received chunk: %s, keys: %s, content: %.500s",
-                    type(chunk).__name__,
-                    chunk.keys() if isinstance(chunk, dict) else "N/A",
-                    chunk,
-                )
-
-                # LangGraph wraps messages in chunk['model']['messages']
-                model_data = chunk.get("model")
-                chunk_messages = (
-                    model_data.get("messages")
-                    if isinstance(model_data, dict)
-                    else chunk.get("messages")
-                )
-
-                if chunk_messages:
-                    last_msg = chunk_messages[-1]
-
+                for chunk in self.executor.stream(
+                    {"messages": messages},
+                    config={"callbacks": all_callbacks} if all_callbacks else None,
+                ):
                     logger.debug(
-                        "Stream chunk — type: %s, tool_calls: %s",
-                        last_msg.type,
-                        getattr(last_msg, "tool_calls", None),
+                        "Received chunk: %s, keys: %s, content: %.500s",
+                        type(chunk).__name__,
+                        chunk.keys() if isinstance(chunk, dict) else "N/A",
+                        chunk,
                     )
 
-                    # Check for tool calls
-                    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-                        for tool_call in last_msg.tool_calls:
-                            tool_name = tool_call.get("name", "unknown")
-                            tools_used.append(tool_name)
+                    # LangGraph wraps messages in chunk['model']['messages']
+                    model_data = chunk.get("model")
+                    chunk_messages = (
+                        model_data.get("messages")
+                        if isinstance(model_data, dict)
+                        else chunk.get("messages")
+                    )
+
+                    if chunk_messages:
+                        last_msg = chunk_messages[-1]
+
+                        logger.debug(
+                            "Stream chunk — type: %s, tool_calls: %s",
+                            last_msg.type,
+                            getattr(last_msg, "tool_calls", None),
+                        )
+
+                        # Check for tool calls
+                        if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+                            for tool_call in last_msg.tool_calls:
+                                tool_name = tool_call.get("name", "unknown")
+                                tools_used.append(tool_name)
+                                yield {
+                                    "type": "tool",
+                                    "message": f"Calling tool: {tool_name}",
+                                    "data": {
+                                        "name": tool_name,
+                                        "args": tool_call.get("args", {}),
+                                    },
+                                }
+
+                        # Check for tool results
+                        if last_msg.type == "tool":
                             yield {
                                 "type": "tool",
-                                "message": f"Calling tool: {tool_name}",
-                                "data": {
-                                    "name": tool_name,
-                                    "args": tool_call.get("args", {}),
-                                },
+                                "message": "Tool completed",
+                                "data": {"result": str(last_msg.content)[:200]},
                             }
 
-                    # Check for tool results
-                    if last_msg.type == "tool":
-                        yield {
-                            "type": "tool",
-                            "message": "Tool completed",
-                            "data": {"result": str(last_msg.content)[:200]},
-                        }
-
-                    # Final AI response (no tool calls)
-                    if last_msg.type == "ai" and not getattr(
-                        last_msg, "tool_calls", None
-                    ):
-                        final_response = self._extract_gemini_content(last_msg.content)
-                        if final_response:
-                            yield {"type": "response", "data": final_response}
+                        # Final AI response (no tool calls)
+                        if last_msg.type == "ai" and not getattr(
+                            last_msg, "tool_calls", None
+                        ):
+                            final_response = self._extract_gemini_content(
+                                last_msg.content
+                            )
+                            if final_response:
+                                yield {"type": "response", "data": final_response}
 
             if not final_response:
                 final_response = "I encountered an error processing your request."

@@ -97,11 +97,14 @@ def get_langfuse_client() -> Optional["Langfuse"]:
 
 def get_langfuse_callback_handler() -> Optional["CallbackHandler"]:
     """
-    Create or return Langfuse callback handler for LangChain-compatible components.
+    Initialize and return the Langchain Langfuse handler safely.
+    Caches the handler globally as `session_id` and `user_id` should
+    be injected per-request using `propagate_attributes`.
     """
-
     global _langfuse_handler
-    config = Config
+
+    if _langfuse_handler is not None:
+        return _langfuse_handler
 
     if CallbackHandler is None:
         if _CALLBACK_IMPORT_ERROR:
@@ -121,15 +124,13 @@ def get_langfuse_callback_handler() -> Optional["CallbackHandler"]:
         )
         return None
 
-    if _langfuse_handler is None:
-        try:
-            _langfuse_handler = CallbackHandler()
-            logger.info("Langfuse callback handler registered")
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.warning(f"Unable to initialize Langfuse callback handler: {exc}")
-            _langfuse_handler = None
-
-    return _langfuse_handler
+    try:
+        _langfuse_handler = CallbackHandler()
+        logger.debug("Langfuse callback handler created globally")
+        return _langfuse_handler
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning(f"Unable to initialize Langfuse callback handler: {exc}")
+        return None
 
 
 def log_langfuse_interaction(
