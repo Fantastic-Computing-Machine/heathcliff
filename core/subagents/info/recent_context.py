@@ -211,9 +211,11 @@ class RecentContextArgs(BaseModel):
 
 @tool(args_schema=RecentContextArgs)
 def recent_context(n: int = 3) -> str:
-    """
-    Return the freshest snippets captured from recent tool calls (max n).
-    Use to ground answers with recency. Falls back with guidance if empty.
+    """Return the most recent snippets captured from prior tool calls.
+
+    Use for: grounding answers with fresh data from earlier tool results.
+    Provide: n (number of snippets, default 3).
+    Returns: Newest snippets separated by --- dividers, or guidance to run a search first.
     """
     with _lock:
         _ensure_cache()

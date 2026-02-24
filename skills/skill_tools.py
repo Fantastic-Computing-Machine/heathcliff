@@ -13,24 +13,18 @@ from skills.master_info import update_master_info
 from skills.skills import SKILLS, SKILLS_BY_NAME
 
 
-@tool
+@tool(
+    description=(
+        "Use for: loading detailed instructions for a specific domain skill.\n"
+        "Provide: The skill name to load.\n"
+        "Returns: Full skill content with detailed guidance.\n"
+        "Available skills: master_info (user profile/preferences), "
+        "british_persona (tone rules), email_safety (address verification workflow).\n"
+        'Example: load_skill(skill_name="master_info")'
+    ),
+)
 def load_skill(skill_name: str) -> str:
-    """Load a specialised skill into context for detailed guidance.
-
-    Call this when you need detailed instructions for a specific domain.
-    Only load a skill when it is actually needed — not pre-emptively.
-
-    Available skills:
-    - master_info: User's live personal profile, schedule, location, and preferences
-    - british_persona: Tone, British English rules, and wit examples
-    - email_safety: Email address rules and confirmation workflow
-
-    Args:
-        skill_name: Name of the skill to load (e.g. "master_info")
-
-    Returns:
-        Full skill content with detailed instructions, or an error message.
-    """
+    """Load a specialised skill into context for detailed guidance."""
     if skill_name == "master_info":
         # Always fetch the current live profile (not the snapshot from import time)
         content = _master_info_live()

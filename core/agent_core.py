@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langfuse import propagate_attributes
 
 from config import Config
 from core.memory_manager import AgentMemoryError
@@ -20,11 +21,7 @@ from instructions.prompts import (
     get_current_temporal_context,
 )
 from logger import logger
-from utils.langfuse_client import (
-    get_langfuse_callback_handler,
-    log_langfuse_interaction,
-)
-from langfuse import propagate_attributes
+from utils.langfuse_client import get_langfuse_callback_handler
 
 INPUT_MAX_LENGTH = 10000
 
@@ -119,7 +116,6 @@ class HeathcliffAgent:
 
         self.max_iterations = Config.MAX_ITERATIONS
         self.callbacks: List[Any] = []
-        logger.info("Callbacks initialized; Langfuse injected per-request")
 
         self.llm = init_chat_model(
             api_key=Config.AI_KEY,
@@ -199,15 +195,23 @@ class HeathcliffAgent:
 
     def _format_chat_history(self, message_history: List[Dict[str, Any]]) -> List:
         """Format pair-based history as LangChain message objects."""
-        chat_history: list = []
+        return [
+            self._ROLE_TO_MSG[str(msg.get("role", ""))](content=msg.get("content", ""))
+            for msg in message_history
+            if str(msg.get("role", "")) in self._ROLE_TO_MSG
+        ]
 
-        for msg in message_history:
-            role = str(msg.get("role", ""))
-            if role in self._ROLE_TO_MSG:
-                msg_cls = self._ROLE_TO_MSG[role]
-                chat_history.append(msg_cls(content=msg.get("content", "")))
-
-        return chat_history
+    def _build_callbacks(
+        self, additional_callbacks: Optional[List[Any]] = None
+    ) -> Optional[List[Any]]:
+        """Assemble the callbacks list, injecting the Langfuse handler if available."""
+        callbacks = list(self.callbacks)
+        langfuse_handler = get_langfuse_callback_handler()
+        if langfuse_handler:
+            callbacks.append(langfuse_handler)
+        if additional_callbacks:
+            callbacks.extend(additional_callbacks)
+        return callbacks or None
 
     def invoke(
         self,
@@ -228,65 +232,41 @@ class HeathcliffAgent:
         Raises:
             ValueError: If user_input is empty or exceeds 10k chars
         """
-        # Validation
         if not user_input or not user_input.strip():
             raise ValueError("User input cannot be empty")
-
         if len(user_input) > INPUT_MAX_LENGTH:
             raise ValueError(
                 f"User input exceeds maximum length of {INPUT_MAX_LENGTH} characters"
             )
 
-        # Generate session_id if not provided
-        if not session_id:
-            session_id = str(uuid.uuid4())
-
+        session_id = session_id or str(uuid.uuid4())
         logger.info("Processing input: '%.50s...' session: %s", user_input, session_id)
 
         try:
-            # Build message history: semantic pairs + recent chronological pairs
             message_history = self.memory_manager.build_message_history(
                 query=user_input, session_id=session_id
             )
             memories = self._extract_memories(
                 self.memory_manager.recall(query=user_input, n=3)
             )
-
-            # Format chat history as messages
             chat_history = self._format_chat_history(message_history)
             memories_block = self._build_memories_block(memories)
 
-            # Build message list for graph state
-            temporal_context = get_current_temporal_context()
             formatted_input = USER_PROMPT_TEMPLATE.format(
                 memories_block=memories_block,
                 user_input=user_input,
-                **temporal_context,
+                **get_current_temporal_context(),
             )
             messages = chat_history + [HumanMessage(content=formatted_input)]
 
-            # Merge callbacks
-            all_callbacks = list(self.callbacks)
-
-            # Inject Langfuse handler dynamically per-session
-            langfuse_handler = get_langfuse_callback_handler()
-            if langfuse_handler:
-                all_callbacks.append(langfuse_handler)
-
-            if additional_callbacks:
-                all_callbacks.extend(additional_callbacks)
-
-            # Invoke graph - handles iterations, tool calls, everything!
             with propagate_attributes(
-                session_id=session_id,
-                user_id=Config.LANGFUSE_USER_ID,
+                session_id=session_id, user_id=Config.LANGFUSE_USER_ID
             ):
                 result = self.executor.invoke(
                     {"messages": messages},
-                    config={"callbacks": all_callbacks} if all_callbacks else None,
+                    config={"callbacks": self._build_callbacks(additional_callbacks)},
                 )
 
-            # Extract response from final message
             final_messages = result.get("messages", [])
             response = (
                 self._extract_gemini_content(final_messages[-1].content)
@@ -294,17 +274,8 @@ class HeathcliffAgent:
                 else ""
             ) or "I encountered an error processing your request."
 
-            # Save to memory
             self.memory_manager.save_chat(user_input, response, session_id)
-
             logger.info("Response: '%.50s...'", response)
-            log_langfuse_interaction(
-                session_id=session_id,
-                user_input=user_input,
-                response=response,
-                status="success",
-            )
-
             return response
 
         except AgentMemoryError:
@@ -313,17 +284,7 @@ class HeathcliffAgent:
             return error_message
         except Exception as e:
             logger.error("Agent invocation failed: %s", e, exc_info=True)
-            error_message = (
-                "I encountered an error processing your request. Please try again."
-            )
-            log_langfuse_interaction(
-                session_id=session_id,
-                user_input=user_input,
-                response=error_message,
-                status="error",
-                extra_metadata={"error": str(e)},
-            )
-            return error_message
+            return "I encountered an error processing your request. Please try again."
 
     def stream_invoke(
         self,
@@ -347,7 +308,6 @@ class HeathcliffAgent:
                 - {"type": "complete", "message": str, "data": dict}
                 - {"type": "error", "message": str, "data": str}
         """
-        # Validation
         if not user_input or not user_input.strip():
             yield {
                 "type": "error",
@@ -364,10 +324,7 @@ class HeathcliffAgent:
             }
             return
 
-        # Generate session_id if not provided
-        if not session_id:
-            session_id = str(uuid.uuid4())
-
+        session_id = session_id or str(uuid.uuid4())
         logger.info("Streaming input: '%.50s...' session: %s", user_input, session_id)
 
         try:
@@ -377,7 +334,6 @@ class HeathcliffAgent:
                 "data": {"phase": "retrieval"},
             }
 
-            # Build message history: semantic pairs + recent chronological pairs
             message_history = self.memory_manager.build_message_history(
                 query=user_input, session_id=session_id
             )
@@ -402,37 +358,22 @@ class HeathcliffAgent:
             for i, msg in enumerate(chat_history):
                 logger.debug("  ctx[%d] %s: %.200s", i, msg.type, msg.content)
 
-            # Build message list for graph state
-            temporal_context = get_current_temporal_context()
             formatted_input = USER_PROMPT_TEMPLATE.format(
                 memories_block=memories_block,
                 user_input=user_input,
-                **temporal_context,
+                **get_current_temporal_context(),
             )
             messages = chat_history + [HumanMessage(content=formatted_input)]
 
-            # Merge callbacks
-            all_callbacks = list(self.callbacks)
-
-            # Inject Langfuse handler dynamically per-session
-            langfuse_handler = get_langfuse_callback_handler()
-            if langfuse_handler:
-                all_callbacks.append(langfuse_handler)
-
-            if additional_callbacks:
-                all_callbacks.extend(additional_callbacks)
-
-            # LangGraph graph has built-in streaming!
             final_response = ""
-            tools_used = []
+            tools_used: List[str] = []
 
             with propagate_attributes(
-                session_id=session_id,
-                user_id=Config.LANGFUSE_USER_ID,
+                session_id=session_id, user_id=Config.LANGFUSE_USER_ID
             ):
                 for chunk in self.executor.stream(
                     {"messages": messages},
-                    config={"callbacks": all_callbacks} if all_callbacks else None,
+                    config={"callbacks": self._build_callbacks(additional_callbacks)},
                 ):
                     logger.debug(
                         "Received chunk: %s, keys: %s, content: %.500s",
@@ -509,13 +450,6 @@ class HeathcliffAgent:
             }
 
             logger.info("Stream complete: '%.50s...'", final_response)
-            log_langfuse_interaction(
-                session_id=session_id,
-                user_input=user_input,
-                response=final_response,
-                status="success",
-                extra_metadata={"tools_used": tools_used},
-            )
 
         except AgentMemoryError:
             error_message = "Memory Not found, Heathcliff shutting down."
@@ -523,21 +457,11 @@ class HeathcliffAgent:
 
         except Exception as e:
             logger.error("Agent streaming failed: %s", e, exc_info=True)
-            error_message = (
-                "I encountered an error processing your request. Please try again."
-            )
             yield {
                 "type": "error",
                 "message": f"Error: {e}",
-                "data": error_message,
+                "data": "I encountered an error processing your request. Please try again.",
             }
-            log_langfuse_interaction(
-                session_id=session_id,
-                user_input=user_input,
-                response=error_message,
-                status="error",
-                extra_metadata={"error": str(e)},
-            )
 
     def __repr__(self) -> str:
         """String representation of the agent."""

@@ -12,31 +12,16 @@ from core.subagents.music.tools import get_spotify_tools
 from logger import logger
 
 _SYSTEM_PROMPT = """\
-Act as a specialist Spotify music control agent to seamlessly manage playback using the available tools.
+You are a Spotify music control specialist.
 
-Your primary objective is to accurately interpret user music requests and execute the corresponding Spotify controls.
+<task>
+Interpret music requests and execute the correct Spotify playback action.
+</task>
 
-# Critical Guidelines
-- ALWAYS use the full song name AND artist name when searching for or playing a track.
-- Never use partial names if the full context is available in the request.
-
-# Steps
-1. Analyze the user's request to identify the intended playback action (play, pause, next, etc.).
-2. Extract the specific song name and artist name from the request if applicable.
-3. Construct the tool call. For `play_track`, ensure the query combines both the song and the artist (e.g., "Taylor Swift - Love Story").
-4. Execute the tool and verify the result.
-5. Provide a brief, clear confirmation of the action taken.
-
-# Output Format
-Provide a concise text response confirming what was done. Do not output JSON.
-
-# Examples
-## Example 1: Playing a Track
-**Input:** "Play Love Story by Taylor Swift"
-
-**Output:**
-**Reasoning:** The user wants to play a specific song. The song is "Love Story" and the artist is "Taylor Swift". I will call the play_track tool with the combined query "Taylor Swift - Love Story".
-**Confirmation:** Playing "Love Story" by Taylor Swift on Spotify.
+<rules>
+1. Use the full song name AND artist name when calling play_track (e.g. "Taylor Swift - Love Story").
+2. Return a brief, plain-text confirmation of the action taken.
+</rules>
 """
 
 _agent = None
@@ -62,20 +47,17 @@ def _build() -> Any:
         return None
 
 
-@tool
+@tool(
+    description=(
+        "Use for: playing, pausing, or checking Spotify playback.\n"
+        "Provide: A natural-language music request with song and artist details.\n"
+        "Returns: A text confirmation of the action taken.\n"
+        'Example: music_agent_tool(request="Play Taylor Swift - Love Story")\n'
+        'Example: music_agent_tool(request="What song is currently playing?")'
+    ),
+)
 def music_agent_tool(request: str) -> str:
-    """Control Spotify music playback.
-
-    Use for all music requests:
-    - Play a specific song or artist
-    - Pause or stop playback
-    - Check what is currently playing
-
-    Input: Full natural-language music request with song and artist details.
-    Example: "Play Taylor Swift - Love Story"
-    Example: "Pause the music"
-    Example: "What song is currently playing?"
-    """
+    """Control Spotify music playback."""
     global _agent
     if _agent is None:
         _agent = _build()

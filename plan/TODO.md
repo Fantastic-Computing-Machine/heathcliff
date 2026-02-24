@@ -187,6 +187,14 @@
 
 ## Phase 5: Testing & Polish
 
+### Prompt Optimization (Latency Reduction)
+
+- [x] Phase 0: Emergency hardening — tool alias middleware + info param compat + prompt regression tests
+- [x] Phase 1: System prompt consolidation — XML-delimited sections, few-shot routing examples, positive-only enforcement
+- [x] Phase 2: Tool description normalization — standardized all 9 tool docstrings to `Use for:` / `Provide:` / `Returns:` / `Example:` template
+- [x] Phase 3: Subagent prompt slimming — reduced 6 subagent prompts from ~30–90 to ~8–15 lines, removed verbose Reasoning blocks
+- [x] Phase 4: Test updates — added `TestToolDescriptionConsistency` (11 tests), 7 XML tag tests, updated existing tests (237 passed)
+
 ### Integration Testing
 
 - [ ] Test wake word → response flow
@@ -232,6 +240,7 @@
 - ✅ Human-in-the-loop approval for sensitive tools
 - ✅ Weather API refactored to LangChain OpenWeatherMapAPIWrapper
 - ✅ User reference generalization (hardcoded names → generic placeholders)
+- ✅ Prompt optimization (XML system prompt, tool description normalization, subagent prompt slimming, middleware alias rewriting — 237 tests passing)
 
 ### In Progress
 
@@ -247,4 +256,4 @@
 
 ---
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-24

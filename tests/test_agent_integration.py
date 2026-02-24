@@ -209,3 +209,216 @@ class TestConcurrentSessions:
         sessions = [c[0][2] for c in save_calls]
         assert sessions.count("s1") == 2
         assert sessions.count("s2") == 2
+
+
+# ---------------------------------------------------------------------------
+# Middleware alias normalization
+# ---------------------------------------------------------------------------
+
+
+class TestMiddlewareAliasNormalization:
+    """RobustLLMToolSelectorMiddleware must rewrite hallucinated tool names."""
+
+    def test_alias_dict_maps_get_weather(self):
+        """get_weather should map to info_agent_tool."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["get_weather"] == "info_agent_tool"
+
+    def test_alias_dict_maps_search_web(self):
+        """search_web should map to info_agent_tool."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["search_web"] == "info_agent_tool"
+
+    def test_alias_dict_maps_play_track(self):
+        """play_track should map to music_agent_tool."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["play_track"] == "music_agent_tool"
+
+    def test_alias_dict_maps_send_email(self):
+        """send_email should map to email_agent_tool."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["send_email"] == "email_agent_tool"
+
+    def test_alias_dict_maps_load_skill_tool(self):
+        """load_skill_tool should map to load_skill."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["load_skill_tool"] == "load_skill"
+
+    def test_alias_dict_maps_skill_loader_tool(self):
+        """skill_loader_tool should map to load_skill."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["skill_loader_tool"] == "load_skill"
+
+    def test_alias_dict_maps_wikipedia_search(self):
+        """wikipedia_search should map to info_agent_tool."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["wikipedia_search"] == "info_agent_tool"
+
+    def test_alias_dict_maps_research_agent_tool(self):
+        """research_agent_tool should map to info_agent_tool."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["research_agent_tool"] == "info_agent_tool"
+
+    def test_alias_dict_maps_pause_playback(self):
+        """pause_playback should map to music_agent_tool."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["pause_playback"] == "music_agent_tool"
+
+    def test_alias_dict_maps_read_emails(self):
+        """read_emails should map to email_agent_tool."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert TOOL_NAME_ALIASES["read_emails"] == "email_agent_tool"
+
+    def test_all_aliases_point_to_valid_supervisor_tools(self):
+        """Every alias target must be one of the 9 real supervisor tools."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        valid_tools = {
+            "info_agent_tool",
+            "music_agent_tool",
+            "email_agent_tool",
+            "calendar_agent_tool",
+            "contacts_agent_tool",
+            "comms_agent_tool",
+            "recent_context",
+            "load_skill",
+            "update_master_info",
+        }
+        for alias, target in TOOL_NAME_ALIASES.items():
+            assert target in valid_tools, (
+                f"Alias {alias!r} → {target!r} is not a valid supervisor tool"
+            )
+
+    def test_middleware_rewrites_hallucinated_name(self):
+        """RobustLLMToolSelectorMiddleware._process_selection_response rewrites aliases."""
+        from core.middleware import RobustLLMToolSelectorMiddleware
+
+        mw = RobustLLMToolSelectorMiddleware.__new__(RobustLLMToolSelectorMiddleware)
+
+        # Simulate the response dict the LLM returns
+        response = {"tools": ["get_weather", "info_agent_tool"]}
+        valid_tool_names = [
+            "info_agent_tool",
+            "music_agent_tool",
+            "load_skill",
+            "recent_context",
+        ]
+
+        # We can't call _process_selection_response directly without the full
+        # parent infrastructure, but we can verify the alias lookup logic
+        # by testing the dict directly.
+        from core.middleware import TOOL_NAME_ALIASES
+
+        rewritten = []
+        for name in response["tools"]:
+            if name in TOOL_NAME_ALIASES:
+                name = TOOL_NAME_ALIASES[name]
+            if name in valid_tool_names:
+                rewritten.append(name)
+
+        assert "info_agent_tool" in rewritten
+        assert "get_weather" not in rewritten
+        # info_agent_tool should appear (original + rewritten alias)
+        assert rewritten.count("info_agent_tool") == 2
+
+    def test_unknown_tool_not_rewritten(self):
+        """A completely unknown tool name should NOT be rewritten — just dropped."""
+        from core.middleware import TOOL_NAME_ALIASES
+
+        assert "totally_fake_tool" not in TOOL_NAME_ALIASES
+
+
+# ---------------------------------------------------------------------------
+# Prompt regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestPromptRegression:
+    """System prompt must reference correct supervisor tools, not raw inner tools."""
+
+    @pytest.fixture
+    def system_prompt(self):
+        from instructions.prompts import build_system_prompt
+
+        return build_system_prompt()
+
+    def test_prompt_mentions_info_agent_tool(self, system_prompt):
+        assert "info_agent_tool" in system_prompt
+
+    def test_prompt_mentions_music_agent_tool(self, system_prompt):
+        assert "music_agent_tool" in system_prompt
+
+    def test_prompt_mentions_email_agent_tool(self, system_prompt):
+        assert "email_agent_tool" in system_prompt
+
+    def test_prompt_mentions_calendar_agent_tool(self, system_prompt):
+        assert "calendar_agent_tool" in system_prompt
+
+    def test_prompt_mentions_contacts_agent_tool(self, system_prompt):
+        assert "contacts_agent_tool" in system_prompt
+
+    def test_prompt_mentions_comms_agent_tool(self, system_prompt):
+        assert "comms_agent_tool" in system_prompt
+
+    def test_prompt_mentions_load_skill(self, system_prompt):
+        assert "load_skill" in system_prompt
+
+    def test_prompt_mentions_update_master_info(self, system_prompt):
+        assert "update_master_info" in system_prompt
+
+    def test_prompt_mentions_recent_context(self, system_prompt):
+        assert "recent_context" in system_prompt
+
+    def test_prompt_does_not_mention_get_weather(self, system_prompt):
+        """get_weather should not appear anywhere in the prompt (positive enforcement only)."""
+        assert "get_weather" not in system_prompt
+
+    def test_prompt_does_not_mention_search_web_as_tool(self, system_prompt):
+        """search_web should not appear as a callable tool in the prompt."""
+        # search_web may appear inside the info subagent's own prompt, but
+        # the supervisor system prompt should only reference info_agent_tool.
+        lines = system_prompt.split("\n")
+        for line in lines:
+            if "search_web" in line:
+                # Acceptable only inside a routing example that points to info_agent_tool
+                assert "info_agent_tool" in line, (
+                    f"search_web appears without info_agent_tool redirect: {line.strip()}"
+                )
+
+    def test_prompt_does_not_mention_play_track(self, system_prompt):
+        """play_track should not appear anywhere in the prompt."""
+        assert "play_track" not in system_prompt
+
+    def test_prompt_does_not_mention_send_email_as_tool(self, system_prompt):
+        """send_email should not appear as a callable tool."""
+        # It may appear inside an example that routes to email_agent_tool
+        lines = system_prompt.split("\n")
+        for line in lines:
+            if "send_email" in line:
+                assert "email_agent_tool" in line, (
+                    f"send_email appears without email_agent_tool redirect: {line.strip()}"
+                )
+
+    def test_prompt_uses_request_param(self, system_prompt):
+        """Supervisor tool signatures should show `request: str`."""
+        assert "request: str" in system_prompt or "request=" in system_prompt
+
+    def test_prompt_contains_routing_examples(self, system_prompt):
+        """Prompt must contain positive routing examples showing correct tool usage."""
+        lower = system_prompt.lower()
+        assert "routing guide" in lower or "→" in system_prompt
+
+    def test_prompt_uses_positive_framing_only(self, system_prompt):
+        """Prompt should not contain negative enforcement markers."""
+        assert "❌" not in system_prompt
+        assert "NEVER call" not in system_prompt

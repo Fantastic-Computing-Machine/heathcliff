@@ -12,27 +12,16 @@ from core.subagents.calendar.tools import get_calendar_toolkit_tools
 from logger import logger
 
 _SYSTEM_PROMPT = """\
-Act as a specialist Google Calendar management agent to effectively create, search, update, and delete calendar events.
+You are a Google Calendar management specialist.
 
-Your primary objective is to interact with Google Calendar tools to manage the user's schedule accurately. You must always use the ISO 8601 datetime format for all time-related inputs.
+<task>
+Create, search, update, and delete calendar events using the available tools.
+</task>
 
-# Steps
-1. Analyze the user's request to determine the required calendar action (create, search, update, delete).
-2. Extract all necessary details from the request (title, start/end times, attendees).
-3. Formulate the required tool calls, applying ISO 8601 formatting to dates and times (e.g., 2024-01-15T14:00:00).
-4. Review the tool output to ensure the action was successful.
-5. Provide a clear confirmation to the user, summarizing the event details.
-
-# Output Format
-Provide a concise, text-based confirmation or summary of the calendar action. The response should clearly list the relevant event details (title, start, end, attendees). 
-
-# Examples
-## Example 1: Creating an Event
-**Input:** "Schedule a design review for tomorrow at 2 PM for one hour with [Attendee]."
-
-**Output:**
-**Reasoning:** I need to create an event titled "Design Review". The start time is tomorrow at 14:00, and the end is 15:00. I will format these times in ISO 8601.
-**Confirmation:** I have successfully scheduled the "Design Review" for tomorrow from 2:00 PM to 3:00 PM. Attendees: [Attendee]
+<rules>
+1. Format all dates and times in ISO 8601 (e.g. 2024-01-15T14:00:00).
+2. Return a concise confirmation listing the event title, start/end times, and attendees.
+</rules>
 """
 
 _agent = None
@@ -58,21 +47,17 @@ def _build() -> Any:
         return None
 
 
-@tool
+@tool(
+    description=(
+        "Use for: creating, searching, updating, and deleting Google Calendar events.\n"
+        "Provide: A natural-language request with complete time/date context.\n"
+        "Returns: A confirmation or list of matching events.\n"
+        "Example: calendar_agent_tool(request=\"Create 'Design Review' tomorrow at 2pm for 1 hour\")\n"
+        'Example: calendar_agent_tool(request="What events do I have this Friday?")'
+    ),
+)
 def calendar_agent_tool(request: str) -> str:
-    """Manage Google Calendar: create, search, update, and delete events.
-
-    Use for all calendar tasks:
-    - Check what's on the calendar today or this week
-    - Create a new event or meeting
-    - Update or reschedule an existing event
-    - Delete or cancel an event
-
-    Input: Full natural-language request with complete time/date context.
-    Example: "Create 'Design Review' tomorrow at 2pm for 1 hour"
-    Example: "What events do I have this Friday?"
-    Example: "Move my 3pm meeting to 4pm"
-    """
+    """Manage Google Calendar: create, search, update, and delete events."""
     global _agent
     if _agent is None:
         _agent = _build()

@@ -462,3 +462,83 @@ class TestMultiStepChaining:
 
         music_mod._agent = None
         info_mod._agent = None
+
+
+# ---------------------------------------------------------------------------
+# info_agent_tool query/request parameter compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestInfoAgentParamCompat:
+    """info_agent_tool must accept both `request` and `query` params (LLM compat)."""
+
+    def _make_mock_agent(self, response_text: str):
+        mock_agent = Mock()
+        mock_msg = Mock()
+        mock_msg.content = response_text
+        mock_agent.invoke = Mock(return_value={"messages": [mock_msg]})
+        return mock_agent
+
+    def test_invoke_with_request_param(self):
+        """Standard invocation with `request` param works."""
+        import core.subagents.info.agent as info_mod
+
+        info_mod._agent = self._make_mock_agent("Sunny and warm.")
+        result = info_mod.info_agent_tool.invoke({"request": "weather in NYC"})
+        assert "Sunny" in result
+        info_mod._agent = None
+
+    def test_invoke_with_query_param(self):
+        """Backward-compat: `query` param is accepted as alias for `request`."""
+        import core.subagents.info.agent as info_mod
+
+        info_mod._agent = self._make_mock_agent("Rainy in London.")
+        result = info_mod.info_agent_tool.invoke({"query": "weather in London"})
+        assert "London" in result or "Rainy" in result
+        info_mod._agent = None
+
+    def test_query_forwarded_to_agent(self):
+        """When `query` is used, the value is forwarded to the underlying agent."""
+        import core.subagents.info.agent as info_mod
+
+        mock_agent = self._make_mock_agent("Result.")
+        info_mod._agent = mock_agent
+        info_mod.info_agent_tool.invoke({"query": "Mount Everest height"})
+
+        call_args = mock_agent.invoke.call_args[0][0]
+        messages = call_args.get("messages", [])
+        assert any("Mount Everest" in str(m) for m in messages)
+        info_mod._agent = None
+
+    def test_request_takes_precedence_over_query(self):
+        """When both `request` and `query` are provided, `request` wins."""
+        import core.subagents.info.agent as info_mod
+
+        mock_agent = self._make_mock_agent("Response.")
+        info_mod._agent = mock_agent
+        info_mod.info_agent_tool.invoke(
+            {"request": "weather in Paris", "query": "weather in Tokyo"}
+        )
+
+        call_args = mock_agent.invoke.call_args[0][0]
+        messages = call_args.get("messages", [])
+        assert any("Paris" in str(m) for m in messages)
+        info_mod._agent = None
+
+    def test_empty_params_returns_helpful_error(self):
+        """Invoking with both params empty returns a helpful error, not a crash."""
+        import core.subagents.info.agent as info_mod
+
+        original = info_mod._agent
+        result = info_mod.info_agent_tool.invoke({"request": "", "query": ""})
+        assert "provide" in result.lower() or "request" in result.lower()
+        info_mod._agent = original
+
+    def test_missing_params_returns_helpful_error(self):
+        """Invoking with no params at all returns a helpful error."""
+        import core.subagents.info.agent as info_mod
+
+        original = info_mod._agent
+        result = info_mod.info_agent_tool.invoke({})
+        assert "provide" in result.lower() or "request" in result.lower()
+        info_mod._agent = original

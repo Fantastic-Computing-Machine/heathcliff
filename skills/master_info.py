@@ -155,34 +155,20 @@ def get_skill_content() -> str:
 # ---------------------------------------------------------------------------
 
 
-@tool
+@tool(
+    description=(
+        "Use for: recording new information about the user discovered during conversation.\n"
+        "Provide: A field name and value to set or append.\n"
+        "Returns: Confirmation that the profile was updated.\n"
+        "List fields (appends): interests, favorite_artists, notes.\n"
+        "String fields (replaces): location, timezone, typical_wake_time, "
+        "typical_sleep_time, formality_preference, humor_tolerance.\n"
+        'Example: update_master_info(field="interests", value="Rock climbing")\n'
+        'Example: update_master_info(field="location", value="Brooklyn, NY")'
+    ),
+)
 def update_master_info(field: str, value: str) -> str:
-    """Update the user's active profile when you learn something new about them.
-
-    Use this to persistently record new information about the user discovered during
-    the conversation (new preference, schedule change, corrected detail, etc.).
-
-    List fields (will APPEND the value):
-      interests, favorite_artists, notes
-
-    String fields (will SET/REPLACE):
-      location, timezone, typical_wake_time, typical_sleep_time,
-      formality_preference, humor_tolerance
-
-    Custom fields: any other key will be stored as-is.
-
-    Args:
-        field: The profile field to update (e.g. "interests", "location")
-        value: The new value to set or append
-
-    Returns:
-        Confirmation message.
-
-    Examples:
-        update_master_info("interests", "Rock climbing")
-        update_master_info("location", "Brooklyn, NY")
-        update_master_info("notes", "Prefers dark mode everything")
-    """
+    """Update the user's active profile when you learn something new about them."""
     with _lock:
         if field in ("interests", "favorite_artists", "notes"):
             if not isinstance(_ACTIVE.get(field), list):

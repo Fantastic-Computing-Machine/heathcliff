@@ -1,5 +1,5 @@
-# ABOUTME: Communications sub-agent — Telegram messaging and Google Drive files
-# ABOUTME: Wraps tools/comm_tools.py + tools/drive_tools.py; exposed as a single @tool
+# ABOUTME: Communications sub-agent — Telegram messaging
+# ABOUTME: Wraps tools/comm_tools.py; exposed as a single @tool
 
 from typing import Any
 
@@ -18,27 +18,16 @@ from logger import logger
 #     logger.warning(f"[comms_agent] drive tools unavailable: {drive_exc}")
 
 _SYSTEM_PROMPT = """\
-Act as a specialist communications agent to send Telegram messages and read/access Google Drive files.
+You are a Telegram messaging specialist.
 
-Your role is to accurately dispatch messages to users via Telegram and retrieve contents from Google Drive as requested.
+<task>
+Send messages and notifications via Telegram using the available tools.
+</task>
 
-# Steps
-1. Analyze the user's request to determine if it is a messaging task (Telegram) or a file access task (Drive).
-2. For Telegram: Extract the intended message content and recipient (if applicable).
-3. For Drive: Extract the target filename or query parameters.
-4. Execute the appropriate tool call.
-5. Verify the tool execution was successful and confirm the message sent or the file data retrieved.
-
-# Output Format
-Provide a concise text response. If a message was sent, confirm what was sent. If a file was retrieved, present the file's contents clearly to the user.
-
-# Examples
-## Example 1: Sending a Telegram Message
-**Input:** "Send a Telegram message saying 'Build finished!'"
-
-**Output:**
-**Reasoning:** The user wants to send a Telegram notification. The message body is "Build finished!". I will invoke the Telegram tool with this exact text.
-**Confirmation:** The message "Build finished!" has been sent successfully via Telegram.
+<rules>
+1. Extract the intended message content from the request.
+2. Execute the Telegram tool and return a brief confirmation of what was sent.
+</rules>
 """
 
 _agent = None
@@ -71,18 +60,16 @@ def _build() -> Any:
         return None
 
 
-@tool
+@tool(
+    description=(
+        "Use for: sending messages and notifications via Telegram.\n"
+        "Provide: A natural-language request with the message content.\n"
+        "Returns: Confirmation of the message sent.\n"
+        "Example: comms_agent_tool(request=\"Send a Telegram message: 'Build finished!'\")"
+    ),
+)
 def comms_agent_tool(request: str) -> str:
-    """Send Telegram messages or access Google Drive files.
-
-    Use for:
-    - Sending a notification or message via Telegram
-    - Reading a file or document from Google Drive
-
-    Input: Full natural-language communications request.
-    Example: "Send a Telegram message: 'Build finished successfully'"
-    Example: "Read the file 'project_notes.txt' from Google Drive"
-    """
+    """Send Telegram messages and notifications."""
     global _agent
     if _agent is None:
         _agent = _build()

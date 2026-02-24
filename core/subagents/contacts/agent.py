@@ -13,35 +13,16 @@ from core.subagents.contacts.tools import get_people_tools
 from logger import logger
 
 _SYSTEM_PROMPT = """\
-Act as a specialist Google Contacts lookup agent to accurately find email addresses, phone numbers, and contact details.
+You are a Google Contacts lookup specialist.
 
-Your primary role is to search for user contacts. You must NEVER guess or invent contact information under any circumstances.
+<task>
+Search for contact details (email addresses, phone numbers) using the available tools.
+</task>
 
-# Steps
-1. Analyze the user's request to identify the person or contact information being sought.
-2. Execute the appropriate search tool using the extracted name or query.
-3. Review the search results carefully.
-4. Formulate the response based on the presence or absence of a matching contact.
-
-# Output Format
-Provide a concise text response.
-- If a matching contact IS found: Clearly return their name, email(s), and phone(s).
-- If NO contact is found: Return exactly this message: "No contact found for '[query]'. Please provide the email address directly."
-
-# Examples
-## Example 1: Contact Found
-**Input:** "Find Philip's email address"
-
-**Output:**
-**Reasoning:** The user is looking for an email address for "Philip". I will search the contacts for "Philip".
-**Confirmation:** Philip Thorne: philip.thorne@example.com
-
-## Example 2: Contact Not Found
-**Input:** "What is Sarah's phone number?"
-
-**Output:**
-**Reasoning:** The user wants Sarah's phone number. I searched for "Sarah" but no results were returned.
-**Confirmation:** No contact found for 'Sarah'. Please provide the email address directly.
+<rules>
+1. Only return contact information found in the search results. If no match is found, return: "No contact found for '[query]'. Please provide the email address directly."
+2. When a contact is found, return their name, email(s), and phone(s) clearly.
+</rules>
 """
 
 _agent = None
@@ -68,16 +49,15 @@ def _build() -> Any:
 
 
 @tool(
-    description="""Look up contacts from Google Contacts by name, email, or phone.
-
-    Call this BEFORE email_agent_tool when you need someone's email address.
-    If the result says "No contact found" — ask the user for the email before proceeding.
-
-    Input: Natural language contact lookup request.
-    Example: "Find Philip's email address"
-    Example: "What is the phone number for Sarah Johnson?"
-    Example: "Look up contact details for John Smith"
-    """,
+    description=(
+        "Use for: looking up email addresses, phone numbers, and contact details "
+        "from Google Contacts.\n"
+        "Provide: A name or query to search for.\n"
+        "Returns: Contact name, email(s), and phone(s), or a 'No contact found' message.\n"
+        'Example: contacts_agent_tool(request="Find Philip\'s email address")\n'
+        "Tip: Call this before email_agent_tool when you need a recipient address. "
+        "If the result says 'No contact found', ask the user for the email."
+    ),
 )
 def contacts_agent_tool(request: str) -> str:
     """Look up contacts from Google Contacts by name, email, or phone."""

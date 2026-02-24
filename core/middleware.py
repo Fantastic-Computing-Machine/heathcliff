@@ -13,6 +13,24 @@ from logger import logger
 
 ALWAYS_INCLUDE_TOOL_NAMES = ["recent_context"]
 
+# Map commonly hallucinated tool names to actual supervisor tool names.
+# When the LLM emits a tool name on the left, silently rewrite it to the right.
+TOOL_NAME_ALIASES: dict[str, str] = {
+    "load_skill_tool": "load_skill",
+    "skill_loader_tool": "load_skill",
+    "research_agent_tool": "info_agent_tool",
+    "search_agent_tool": "info_agent_tool",
+    "weather_tool": "info_agent_tool",
+    "get_weather": "info_agent_tool",
+    "search_web": "info_agent_tool",
+    "wikipedia_search": "info_agent_tool",
+    "play_track": "music_agent_tool",
+    "pause_playback": "music_agent_tool",
+    "current_track": "music_agent_tool",
+    "send_email": "email_agent_tool",
+    "read_emails": "email_agent_tool",
+}
+
 
 class RobustLLMToolSelectorMiddleware(LLMToolSelectorMiddleware):
     def _process_selection_response(
@@ -27,6 +45,14 @@ class RobustLLMToolSelectorMiddleware(LLMToolSelectorMiddleware):
             # Handle cases where the LLM might append arguments (e.g. "tool_name(...)")
             if "(" in tool_name:
                 tool_name = tool_name.split("(")[0].strip()
+
+            # Rewrite known aliases to actual tool names
+            if tool_name in TOOL_NAME_ALIASES:
+                canonical = TOOL_NAME_ALIASES[tool_name]
+                logger.debug(
+                    "Rewriting hallucinated tool name %r → %r", tool_name, canonical
+                )
+                tool_name = canonical
 
             if tool_name in valid_tool_names:
                 cleaned_tools.append(tool_name)

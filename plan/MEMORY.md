@@ -28,7 +28,7 @@ heathcliff/
 │   └── subagents/            # Domain-specific subagents
 │       ├── __init__.py       # Registry: get_all_subagent_tools()
 │       ├── calendar/         # Google Calendar tools
-│       ├── comms/            # Telegram, Google Drive
+│       ├── comms/            # Telegram messaging
 │       ├── contacts/         # Contact management
 │       ├── email/            # Gmail tools
 │       ├── info/             # Weather, News, Web search, Wikipedia, Website reader
@@ -61,7 +61,7 @@ heathcliff/
 ├── instructions/             # System prompt templates (prompts.py, XML delimiters)
 │   ├── __init__.py
 │   └── prompts.py
-├── tests/                    # Pytest test suite (6 test files)
+├── tests/                    # Pytest test suite (7 test files)
 ├── logger.py                 # Logging setup and formats
 ├── main.py                   # Entry point (voice/text mode)
 ├── master_info.toml          # User profile & preferences (TOML)
@@ -80,7 +80,7 @@ heathcliff/
 - **User Prompt XML Delimiters (2026-02-22)**: `USER_PROMPT_TEMPLATE` now wraps long-term memory and current user query in XML tags (`<USER_MEMORY_CONTEXT>`, `<USER_QUERY>`) to improve boundary adherence.
 - **Credentials**: `utils/google_auth.get_google_credentials()` — cached per scope/token tuple.
 - **Approval**: `StreamlitApprovalHandler` intercepts `SENSITIVE_TOOLS` (send_email, create_event, etc.) via `on_tool_start` hook. Approve/Modify/Reject in Streamlit UI.
-- **Middleware (2026-02-23)**: Framework exists in `core/middleware.py` — `LLMToolSelectorMiddleware`, `ToolCallLimitMiddleware`, and `TodoListMiddleware` are active. `always_include=["recent_context"]` ensures recency tool stays available. Tests mock `create_middleware_stack` to avoid `langchain_openai` import dependency.
+- **Middleware (2026-02-23)**: Framework exists in `core/middleware.py` — `LLMToolSelectorMiddleware`, `ToolCallLimitMiddleware`, `TodoListMiddleware`, and `RobustLLMToolSelectorMiddleware` (alias rewriting for 12+ hallucinated tool names) are active. `always_include=["recent_context"]` ensures recency tool stays available. Tests mock `create_middleware_stack` to avoid `langchain_openai` import dependency.
 - **Middleware Tool Selection (2026-02-23)**: `LLMToolSelectorMiddleware` now sets `always_include=["recent_context"]` so recency snippets remain selectable even when other tools are filtered.
 - **Context Window**: Retrieval now uses pair-aware history (`build_message_history`) with semantic pairs first and recent chronological pairs next.
 - **Info Tooling (2026-02-23)**: `core/subagents/info/tools.py` now includes optional LangChain community wrappers for Yahoo Finance news and YouTube search, plus a `recent_context` tool backed by a **JSON-backed persistent store** (`temp/recent_memory.json`) with configurable TTL (2h), max items (100), atomic writes, thread lock, stale-entry cleanup, corrupt-file recovery, and auto-path setup on module load. Config lives in `RecentContextConfig` (5 env vars) wired into the `Conf` MRO. The tool is also registered at supervisor level via `_assemble_default_tools()` (9 tools total: 6 subagents + recent_context + load_skill + update_master_info).
@@ -104,6 +104,16 @@ heathcliff/
 ---
 
 ## Timeline (Latest Activity)
+
+- **2026-02-24**: **Prompt optimization Phases 0–4 complete — latency reduction & test suite at 237** ✅
+  - **Root cause**: System prompt referenced raw inner tools (`get_weather`, `search_web`) instead of supervisor-level tools (`info_agent_tool`, etc.), causing hallucinated tool calls and ~48s weather queries.
+  - **Phase 0 (Emergency hardening)**: Added `TOOL_NAME_ALIASES` dict in `core/middleware.py` mapping 12+ hallucinated tool names to canonical supervisor tools via `RobustLLMToolSelectorMiddleware`. Fixed `info_agent_tool` to accept both `request` and `query` params. Added 30 tests (info param compat + middleware alias + prompt regression).
+  - **Phase 1 (System prompt consolidation)**: Complete rewrite of `build_system_prompt()` in `instructions/prompts.py` with XML-delimited sections (`<role>`, `<tools>`, `<routing_examples>`, `<execution_rules>`, `<response_style>`, `<user_profile>`), 6 few-shot routing examples, positive-only enforcement.
+  - **Phase 2 (Tool description normalization)**: Standardized all 9 supervisor-visible tool `@tool` docstrings to `Use for:` / `Provide:` / `Returns:` / `Example:` template. Fixed email tool (recipient conditional), comms tool (removed Google Drive references).
+  - **Phase 3 (Subagent prompt slimming)**: Reduced all 6 subagent `_SYSTEM_PROMPT` constants from ~30–90 lines to ~8–15 lines using XML tags (`<task>`, `<rules>`, `<workflow>`). Removed verbose `**Reasoning**` output blocks.
+  - **Phase 4 (Test updates)**: Added `TestToolDescriptionConsistency` class (11 tests), 7 new XML tag validation tests, updated existing tests for new format.
+  - **Files edited**: `instructions/prompts.py`, `core/middleware.py`, all 6 subagent `agent.py` files, `skills/skill_tools.py`, `skills/master_info.py`, `core/subagents/info/recent_context.py`, `tests/test_agent_integration.py`, `tests/test_subagents.py`.
+  - **Full suite: 237 passed, 0 failed.**
 
 - **2026-02-23**: **JSON-backed persistent recent context store + test suite green** ✅
   - Rewrote `core/subagents/info/recent_context.py` from in-memory list to JSON-backed persistent store: `temp/recent_memory.json` with configurable TTL (2h), max items (100), atomic writes (`.tmp` + `os.replace()`), `threading.Lock`, stale cleanup on every read/write, corrupt-file recovery, and auto-path setup on module load.
@@ -230,6 +240,6 @@ heathcliff/
 
 ## Project Status
 
-**Phases 1–4 Complete** ✅ — Subagents architecture refactor, skills framework (3 skills), Mem0 memory, 3D Blob UI, Langfuse observability, master profile TOML migration, user reference generalization, weather API LangChain wrapper, JSON-backed recent context store, middleware stack (tool selector + call limits + todo list) all completed. Full test suite: 184 passed. **Phase 5 (Testing & Polish) In Progress** ⏳
+**Phases 1–4 Complete** ✅ — Subagents architecture refactor, skills framework (3 skills), Mem0 memory, 3D Blob UI, Langfuse observability, master profile TOML migration, user reference generalization, weather API LangChain wrapper, JSON-backed recent context store, middleware stack (tool selector + call limits + todo list + alias rewriting), prompt optimization (XML-delimited system prompt, normalized tool descriptions, slimmed subagent prompts) all completed. Full test suite: 237 passed. **Phase 5 (Testing & Polish) In Progress** ⏳
 
 Next steps: Integration testing, error recovery, Docker containerization, troubleshooting guide.
