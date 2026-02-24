@@ -133,7 +133,7 @@ Chunk Size: {Config.CHUNK_SIZE} samples
             f"""
 Rate: {Config.TTS_RATE} words/minute
 Volume: {Config.TTS_VOLUME}
-Voice: {Config.TTS_VOICE or 'default'}
+Voice: {Config.TTS_VOICE or "default"}
         """,
             language=None,
         )

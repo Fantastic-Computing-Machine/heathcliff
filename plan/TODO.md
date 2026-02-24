@@ -104,6 +104,11 @@
 - [x] Implement `search_web()` tool (DuckDuckGo primary + Google fallback)
 - [x] Implement `wikipedia_search()` tool
 - [x] Implement `read_website()` tool (webpage content extraction)
+- [x] Add Yahoo Finance news tool integration
+- [x] Add YouTube search tool integration
+- [x] Add `recent_context()` tool for recency-grounded answers
+- [x] Move `recent_context()` into dedicated module (`core/subagents/info/recent_context.py`)
+- [x] Always include `recent_context` in LLM tool-selector middleware
 - [x] Register tools with LangChain
 - [x] Test all info tools
 

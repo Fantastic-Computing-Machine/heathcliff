@@ -3,7 +3,15 @@
 
 from typing import Any, List, Optional
 
+from langchain.agents.middleware import (
+    LLMToolSelectorMiddleware,
+    ToolCallLimitMiddleware,
+    TodoListMiddleware,
+)
+
 from logger import logger
+
+ALWAYS_INCLUDE_TOOL_NAMES = ["recent_context"]
 
 
 def create_middleware_stack(
@@ -26,5 +34,15 @@ def create_middleware_stack(
     Returns:
         List of middleware instances
     """
-    logger.info("Middleware disabled (class-based config has no middleware section).")
-    return []
+    if not llm:
+        raise ValueError("LLM instance is required for middleware.")
+
+    middleware_stack = []
+
+    middleware_stack.append(ToolCallLimitMiddleware(thread_limit=20, run_limit=10))
+    middleware_stack.append(TodoListMiddleware())
+    middleware_stack.append(
+        LLMToolSelectorMiddleware(model=llm, always_include=ALWAYS_INCLUDE_TOOL_NAMES)
+    )
+
+    return middleware_stack

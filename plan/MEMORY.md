@@ -81,7 +81,9 @@ heathcliff/
 - **Credentials**: `utils/google_auth.get_google_credentials()` — cached per scope/token tuple.
 - **Approval**: `StreamlitApprovalHandler` intercepts `SENSITIVE_TOOLS` (send_email, create_event, etc.) via `on_tool_start` hook. Approve/Modify/Reject in Streamlit UI.
 - **Middleware**: Framework exists in `core/middleware.py` (6 types) but **all disabled** — LangGraph callback interface incompatible with LangChain middleware.
+- **Middleware Tool Selection (2026-02-23)**: `LLMToolSelectorMiddleware` now sets `always_include=["recent_context"]` so recency snippets remain selectable even when other tools are filtered.
 - **Context Window**: Retrieval now uses pair-aware history (`build_message_history`) with semantic pairs first and recent chronological pairs next.
+- **Info Tooling (2026-02-23)**: `core/subagents/info/tools.py` now includes optional LangChain community wrappers for Yahoo Finance news and YouTube search, plus a `recent_context` tool backed by a small in-memory recency buffer populated from successful info-tool outputs.
 
 ### Operational Notes
 
@@ -101,6 +103,26 @@ heathcliff/
 ---
 
 ## Timeline (Latest Activity)
+
+- **2026-02-23**: **Tool selector always includes recent context** ✅
+  - Updated `core/middleware.py` to define `ALWAYS_INCLUDE_TOOL_NAMES = ["recent_context"]`.
+  - Wired `LLMToolSelectorMiddleware(..., always_include=ALWAYS_INCLUDE_TOOL_NAMES)` so `recent_context` is consistently available to the model.
+
+- **2026-02-23**: **Recent context extracted to dedicated module** ✅
+  - Moved `_RECENT_SNIPPETS`, `_add_recent_snippet`, `_capture_recent_result`, `RecentContextArgs`, and `recent_context()` into `core/subagents/info/recent_context.py`.
+  - Updated `core/subagents/info/tools.py` to import `recent_context` and `_capture_recent_result` from the new module.
+  - Kept tool registration behavior unchanged via `get_info_tools()`.
+
+- **2026-02-23**: **Info tool import style adjustment** ✅
+  - Moved Yahoo Finance and YouTube tool imports to module scope in `core/subagents/info/tools.py`.
+  - Removed local imports inside `finance_news_tool()` and `yt_search_tool()` per code-style request.
+
+- **2026-02-23**: **Info subagent tool expansion (finance + YouTube + recent context)** ✅
+  - Added `finance_news_tool()` returning `YahooFinanceNewsTool()` when available.
+  - Added `yt_search_tool()` returning `YouTubeSearchTool()` when available.
+  - Added recency buffer (`_RECENT_SNIPPETS`) and `recent_context(n)` LangChain tool for short-term grounding.
+  - Wired snippet capture into `get_weather`, `get_news`, `search_web`, `wikipedia_search`, and `read_website`.
+  - Updated `get_info_tools()` to register `recent_context` plus optional finance/YouTube tools.
 
 - **2026-02-23**: **Generalized user references** ✅
   - Replaced all hardcoded references to specific user names with generic placeholders ("User", "Alex") across the codebase.

@@ -80,7 +80,6 @@ class TestSubagentRegistry:
 
 
 class TestToolMetadata:
-
     @pytest.mark.parametrize(
         "tool_name,module_path",
         [

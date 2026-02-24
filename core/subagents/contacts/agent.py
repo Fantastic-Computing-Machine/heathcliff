@@ -49,7 +49,6 @@ _agent = None
 
 def _build() -> Any:
     try:
-
         return create_agent(
             model=init_chat_model(
                 api_key=Config.AI_KEY,

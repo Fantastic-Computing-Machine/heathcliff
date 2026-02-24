@@ -98,12 +98,15 @@ def _build() -> Any:
 @tool(
     description="""Research, web search, weather, news, Wikipedia lookups, and web scraping.
 
-    Use for any information retrieval:
-    - Current weather in a location
-    - Latest news on a topic
-    - Web search for facts or data
-    - Wikipedia summaries
-    - Reading specific URLs for in-depth information
+Use for any information retrieval:
+- Current weather in a location
+- Latest news on a topic
+- Yahoo Finance market/company headlines
+- YouTube video discovery for a topic
+- Web search for facts or data
+- Wikipedia summaries
+- Reading specific URLs for in-depth information
+- Recent context snippets from prior info tool calls
 
     Input: Full natural-language request with complete context.
     Example: "What is the current weather in Jersey City, NJ?"

@@ -12,16 +12,19 @@ import requests
 import wikipedia
 from bs4 import BeautifulSoup
 from langchain.tools import tool
+from langchain_community.tools import YouTubeSearchTool
 from langchain_community.tools.ddg_search.tool import (
     DuckDuckGoSearchResults as DuckDuckGoSearchTool,
 )
 from langchain_community.tools.google_search import GoogleSearchResults
+from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 from langchain_community.utilities import (
     GoogleSearchAPIWrapper,
     OpenWeatherMapAPIWrapper,
 )
 
 from config import Config
+from core.subagents.info.recent_context import _capture_recent_result, recent_context
 from logger import logger
 
 _google_tool: Optional[Any] = None
@@ -171,6 +174,7 @@ def get_weather(location: str | None = None) -> str:
 
         # It returns a string containing weather information
         weather_data = weather_wrapper.run(location)
+        _capture_recent_result("get_weather", weather_data)
 
         logger.info(f"Weather retrieved for {location} using OpenWeatherMapAPIWrapper")
         return weather_data
@@ -227,7 +231,9 @@ def get_news(category: str = "technology") -> str:
             source = article.get("source", {}).get("name", "Unknown")
             news_list.append(f"{source}: {title}\n{description}")
 
-        return "\n\n".join(news_list)
+        result = "\n\n".join(news_list)
+        _capture_recent_result("get_news", result)
+        return result
 
     except requests.exceptions.RequestException as e:
         return f"Error fetching news: {str(e)}"
@@ -255,6 +261,7 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
         response = _dispatch_search(primary_provider, query, max_results, config)
 
         if response:
+            _capture_recent_result("search_web", response)
             return response
 
         # Automatic chained fallback
@@ -263,6 +270,7 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
             if fallback != primary_provider:
                 fb_resp = _dispatch_search(fallback, query, max_results, config)
                 if fb_resp:
+                    _capture_recent_result("search_web", fb_resp)
                     return fb_resp
 
         # Final fallback: Wikipedia summary search
@@ -279,7 +287,9 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
                 continue
 
         if summaries:
-            return "\n\n".join(summaries)
+            result = "\n\n".join(summaries)
+            _capture_recent_result("search_web", result)
+            return result
 
         return f"No search results found for: {query}"
 
@@ -318,7 +328,9 @@ def wikipedia_search(query: str) -> str:
                 logger.info(
                     f"Successfully retrieved Wikipedia article for: {result_title}"
                 )
-                return f"{result_title} (Full Text):\n{page.content}"
+                result = f"{result_title} (Full Text):\n{page.content}"
+                _capture_recent_result("wikipedia_search", result)
+                return result
             except wikipedia.exceptions.PageError:
                 logger.debug(f"PageError for {result_title}, trying next result")
                 continue
@@ -333,7 +345,9 @@ def wikipedia_search(query: str) -> str:
                         logger.info(
                             f"Retrieved disambiguated full article for: {e.options[0]}"
                         )
-                        return f"{e.options[0]} (Full Text):\n{page.content}"
+                        result = f"{e.options[0]} (Full Text):\n{page.content}"
+                        _capture_recent_result("wikipedia_search", result)
+                        return result
                     except:
                         continue
 
@@ -395,6 +409,8 @@ def read_website(url: str) -> str:
         if len(text) > 15000:
             text = text[:15000] + "... [Content truncated due to length]"
 
+        _capture_recent_result("read_website", text)
+
         return (
             text
             if text
@@ -410,6 +426,24 @@ def read_website(url: str) -> str:
         return f"Error processing website: {str(e)}"
 
 
+def finance_news_tool() -> List[Any]:
+    """Return the Yahoo Finance News Tool."""
+    try:
+        return [YahooFinanceNewsTool()]
+    except Exception as exc:
+        logger.warning(f"Yahoo Finance tool unavailable: {exc}")
+        return []
+
+
+def yt_search_tool() -> List[Any]:
+    """Return the YouTube Search Tool."""
+    try:
+        return [YouTubeSearchTool()]
+    except Exception as exc:
+        logger.warning(f"YouTube search tool unavailable: {exc}")
+        return []
+
+
 def get_info_tools() -> List[Any]:
     """
     Get all info tools as a list for agent registration.
@@ -417,4 +451,14 @@ def get_info_tools() -> List[Any]:
     Returns:
         List of LangChain tools
     """
-    return [get_weather, get_news, search_web, wikipedia_search, read_website]
+    tools: List[Any] = [
+        get_weather,
+        get_news,
+        search_web,
+        wikipedia_search,
+        read_website,
+        recent_context,
+    ]
+    tools.extend(finance_news_tool())
+    tools.extend(yt_search_tool())
+    return tools

@@ -139,7 +139,6 @@ class HeathcliffAgent:
             timeout=Config.TIMEOUT_SECONDS,
         )
         self.middleware_stack = create_middleware_stack(llm=self.llm)
-        self.callbacks.extend(self.middleware_stack)
 
         # Build supervisor graph
         self.prompt = self._build_prompt_template()
@@ -164,6 +163,7 @@ class HeathcliffAgent:
             model=self.llm,
             tools=self._tools,
             system_prompt=self.prompt,
+            middleware=self.middleware_stack,
         )
         tool_names = [getattr(t, "name", str(t)) for t in self._tools]
         logger.info("Supervisor built with tools: %s", tool_names)

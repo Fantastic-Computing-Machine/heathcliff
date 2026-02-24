@@ -10,6 +10,7 @@ from core.subagents.contacts.agent import contacts_agent_tool
 from core.subagents.email.agent import email_agent_tool
 from core.subagents.info.agent import info_agent_tool
 from core.subagents.music.agent import music_agent_tool
+from core.subagents.info.recent_context import recent_context
 
 __all__ = [
     "info_agent_tool",
@@ -19,6 +20,7 @@ __all__ = [
     "contacts_agent_tool",
     "comms_agent_tool",
     "get_all_subagent_tools",
+    "recent_context",
 ]
 
 
@@ -31,4 +33,5 @@ def get_all_subagent_tools() -> List[Any]:
         calendar_agent_tool,
         contacts_agent_tool,
         comms_agent_tool,
+        recent_context,
     ]
