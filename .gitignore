@@ -176,4 +176,5 @@ uv.lock
 
 # Recent context runtime store
 temp/
+artifacts/
 .ruff_cache

@@ -70,7 +70,9 @@ class RuntimeConf:
     # MODEL = "gemini-2.5-flash-lite"
     SUPERVISOR_MODEL = "google_genai:gemini-3.1-flash-lite-preview"
     SUBAGENT_MODEL = "google_genai:gemini-3.1-flash-lite-preview"
-    TOOL_MODEL = "google_genai:gemini-3-flash-preview"
+    # Specialists default to the same low-quota model as Heathcliff. Override
+    # this explicitly when a task needs a more capable provider/model.
+    TOOL_MODEL = os.getenv("TOOL_MODEL", "google_genai:gemini-3.1-flash-lite-preview")
     # Supervisor Hyperparameters
     TEMPERATURE = 0.5
     MAX_TOKENS = 8192

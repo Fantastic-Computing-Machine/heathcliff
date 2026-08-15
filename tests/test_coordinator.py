@@ -12,7 +12,7 @@ from langchain_community.callbacks.human import HumanRejectedException
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
-from core.delegation.contracts import ErrorType, TaskResult, TaskStatus
+from core.delegation.contracts import ErrorType, TaskResult, TaskSpec, TaskStatus
 from core.delegation.registry import AgentDescriptor, CapabilityRegistry
 
 
@@ -108,6 +108,56 @@ class TestCoordinatorStability:
         result = invoke_coordinator(graph, "Plan my afternoon", "sess-chain")
         assert isinstance(result, str)
         assert len(result) > 0
+
+    def test_failed_specialist_output_blocks_dependent_action(self, registry):
+        from core.coordinator_graph import build_coordinator_graph
+
+        email_called = False
+
+        def failed_research(request="", **kwargs):
+            return "Research failed: Gemini quota exhausted"
+
+        def email(request="", **kwargs):
+            nonlocal email_called
+            email_called = True
+            return "Email sent"
+
+        registry.register(
+            AgentDescriptor(
+                name="info_agent_tool",
+                capabilities=["research"],
+                invoke_fn=failed_research,
+            )
+        )
+        registry.register(
+            AgentDescriptor(
+                name="email_agent_tool", capabilities=["email"], invoke_fn=email
+            )
+        )
+        plan = [
+            {
+                "goal": "Research Korea",
+                "target_agent": "info_agent_tool",
+                "depends_on": [],
+                "parallelizable": False,
+            },
+            {
+                "goal": "Use the research context",
+                "target_agent": "email_agent_tool",
+                "depends_on": [0],
+                "parallelizable": False,
+            },
+        ]
+        graph = build_coordinator_graph(registry, _make_llm(plan))
+        state = _base_state()
+        state.update({"user_input": "research then email", "session_id": "sess-failed"})
+
+        result = graph.invoke(state)
+        task_results = [TaskResult.from_dict(d) for d in result["task_results"]]
+
+        assert task_results[0].status == TaskStatus.FAILED
+        assert task_results[1].status == TaskStatus.DEPENDENCY_FAILED
+        assert not email_called
 
     def test_invalid_dependency_refs_and_cycle_mark_dependency_failed(self, registry):
         from core.coordinator_graph import build_coordinator_graph
@@ -228,6 +278,27 @@ class TestCoordinatorStability:
 
         assert task_results[0].status == TaskStatus.TIMEOUT
         assert task_results[1].status == TaskStatus.COMPLETED
+
+    def test_sensitive_task_does_not_outlive_its_timeout(self, registry):
+        from core.coordinator_graph import _execute_single_task
+
+        def slow_send(request="", **kwargs):
+            time.sleep(0.03)
+            return "Email sent"
+
+        registry.register(
+            AgentDescriptor(
+                name="email_agent_tool", capabilities=["email"], invoke_fn=slow_send
+            )
+        )
+        result = _execute_single_task(
+            TaskSpec(goal="Send an email", target_agent="email_agent_tool"),
+            registry,
+            callbacks=(),
+            timeout_ms=1,
+        )
+
+        assert result.status == TaskStatus.COMPLETED
 
     def test_total_runtime_cutoff_stops_scheduling_new_tasks(
         self, registry, monkeypatch

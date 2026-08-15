@@ -9,8 +9,9 @@ import time
 import unicodedata
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from contextvars import copy_context
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, cast
 
 from langchain_community.callbacks.human import HumanRejectedException
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -429,13 +430,37 @@ def _dependency_precheck(
 def _execute_with_timeout(task_callable: Any, timeout_ms: int) -> TaskResult:
     """Execute callable with timeout; return timeout TaskResult via exception sentinel."""
     executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(task_callable)
+    future = executor.submit(copy_context().run, task_callable)
     try:
-        return future.result(timeout=max(timeout_ms, 1) / 1000.0)
+        return cast(TaskResult, future.result(timeout=max(timeout_ms, 1) / 1000.0))
     except TimeoutError:
         raise
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _is_agent_failure(output: str) -> bool:
+    """Recognise the explicit failure contract used by specialist wrappers."""
+    return (
+        output.strip()
+        .lower()
+        .startswith(
+            (
+                "research failed:",
+                "music control failed:",
+                "email operation failed:",
+                "calendar operation failed:",
+                "contacts lookup failed:",
+                "communications failed:",
+                "research agent is currently unavailable.",
+                "music agent is currently unavailable.",
+                "email agent is currently unavailable.",
+                "calendar agent is currently unavailable.",
+                "contacts agent is currently unavailable.",
+                "communications agent is currently unavailable.",
+            )
+        )
+    )
 
 
 def _log_task_result(spec: TaskSpec, result: TaskResult) -> None:
@@ -505,10 +530,19 @@ def _execute_single_task(
                     output = descriptor.invoke_fn.invoke({"request": spec.goal})
                 else:
                     output = descriptor.invoke_fn(request=spec.goal)
+                output_text = str(output) if output else "No response generated."
+                if _is_agent_failure(output_text):
+                    return TaskResult.failure(
+                        task_id=spec.task_id,
+                        error=output_text,
+                        error_type=ErrorType.EXECUTION_ERROR,
+                        producer_agent=descriptor.name,
+                        latency_ms=int((time.monotonic() - start) * 1000),
+                    )
                 return TaskResult(
                     task_id=spec.task_id,
                     status=TaskStatus.COMPLETED,
-                    output=str(output) if output else "No response generated.",
+                    output=output_text,
                     producer_agent=descriptor.name,
                     latency_ms=int((time.monotonic() - start) * 1000),
                 )
@@ -527,7 +561,13 @@ def _execute_single_task(
                     latency_ms=int((time.monotonic() - start) * 1000),
                 )
 
-        result = _execute_with_timeout(invoke, timeout_ms=timeout_ms)
+        # A Python worker thread cannot be killed. Never allow an approved
+        # side-effecting agent to outlive the coordinator after a timeout.
+        result = (
+            invoke()
+            if requires_approval(descriptor.name, spec.goal)
+            else _execute_with_timeout(invoke, timeout_ms=timeout_ms)
+        )
     except TimeoutError:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         timeout_result = TaskResult(

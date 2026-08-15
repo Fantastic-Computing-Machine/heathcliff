@@ -159,5 +159,11 @@ def test_telegram_send_waits_for_api(monkeypatch):
 
     result = comms_tools.send_to_telegram.invoke({"message": "Build passed"})
 
-    bot.send_message.assert_awaited_once_with(chat_id="123", text="Build passed")
+    call = bot.send_message.await_args
+    assert call is not None
+    sent_message = call.kwargs["text"]
+    assert sent_message.startswith("Build passed\n\nHeathcliff o.b.o ")
+    assert (
+        "This is sent by Heathcliff an Autonomous Intelligence system." in sent_message
+    )
     assert "successfully" in result.lower()

@@ -4,6 +4,20 @@
 
 ---
 
+## Type Checking Polish (2026-08-15)
+
+- [x] Replace deprecated `@contextmanager` `Iterator` return annotation with `Generator`
+- [x] Verify Ruff and all tests; remaining `ty` diagnostics are unrelated existing issues
+
+## Failed Action-Chain Hardening (2026-08-15)
+
+- [x] Treat explicit specialist failures as failed task results so dependent actions do not run
+- [x] Keep approved Gmail, Calendar, and communications actions in-process rather than allowing an unkillable timeout worker to continue
+- [x] Replace Gmail search's brittle `raw` message parser with the API's `full` payload
+- [x] Default specialist agents to the lower-quota model, with an explicit `TOOL_MODEL` override
+
+---
+
 ## Repository Audit and Action Chains (2026-08-02)
 
 - [x] Feed retrieved conversation history into coordinator planning for follow-up clarification turns
@@ -29,7 +43,20 @@
 - [x] Play named Spotify playlists without falling back to a track search
 - [x] Replace flaky Wikipedia package queries with Wikimedia REST search
 - [x] Consolidate model configuration on provider-neutral `AI_KEY`
-- [x] Run full formatter, type check, and test suite (`310 passed`; `ty` has 37 pre-existing diagnostics)
+- [x] Run full formatter, type check, and test suite (`312 passed`; `ty` has 34 pre-existing diagnostics)
+
+## Live Integration Testing (2026-08-15)
+
+- [x] Add an opt-in text-mode runner that writes per-query coordinator events, responses, approvals, and specialist tool traces to JSONL
+- [x] Run a bounded real-service pass (weather, news, research, Gmail, Calendar, Contacts, and Spotify); preserve its local JSONL artifact
+- [ ] Fix Google Calendar read-event parsing (`Expecting property name enclosed in double quotes` from `langchain_google_community`)
+- [ ] Make timed-out specialist calls stop cooperatively instead of continuing in the background
+- [ ] Complete Spotify's interactive OAuth refresh before headless/live playback checks
+- [ ] Rerun the full JSONL suite after Gemini free-tier quota resets; include rejection-only draft and calendar approval cases
+
+## Outbound Identity (2026-08-15)
+
+- [x] Add the master-name Heathcliff signature and autonomous-system disclaimer to Gmail drafts, Gmail sends, and Telegram messages
 
 ---
 

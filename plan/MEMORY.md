@@ -2,6 +2,19 @@
 
 This file serves as the **working memory** for all coding agents on the Heathcliff project. It tracks discoveries, issues, and recent activity. For complete project documentation, see `AGENTS.md`.
 
+## 2026-08-15 Context Manager Annotation
+
+- Updated `core/subagents/_runner.py:capture_agent_invocations()` from `Iterator[...]` to `Generator[..., None, None]` for `@contextmanager` compatibility. Ruff passed and all 314 tests passed; `ty` still reports the same 34 unrelated diagnostics.
+
+## 2026-08-15 Failed Action-Chain Hardening
+
+- A live Korea-trip research-and-email attempt correctly paused for approval, but Gemini's daily quota made the research and contacts specialists return their explicit `... failed:` strings. The old coordinator treated those strings as successes, proceeded to Gmail, timed out, and left an unkillable worker alive; no email was sent before that worker then crashed in the third-party Gmail `raw` parser.
+- The coordinator now converts the shared specialist failure/unavailable contract into `EXECUTION_ERROR`, so every dependent task becomes `DEPENDENCY_FAILED` and never invokes the next external action.
+- Approval-gated delegated actions now run in-process after approval. Python cannot cancel an active `ThreadPoolExecutor` thread, so this prevents a send/draft/calendar/message action from continuing after Heathcliff reports a timeout. Non-mutating work retains bounded timeout behavior.
+- Replaced toolkit Gmail search with `SafeGmailSearch`, which requests the supported `full` response and extracts `text/plain` MIME parts without requiring a `raw` field. Added regression tests for missing-raw payloads, failed dependency chains, and sensitive timeout handling.
+- `TOOL_MODEL` defaults to `google_genai:gemini-3.1-flash-lite-preview`, matching the working supervisor default and remaining overrideable through `.env`; this avoids selecting the exhausted `gemini-3-flash-preview` by default.
+- Verification: Ruff and `git diff --check` passed; the full suite passed (317 tests). `uvx ty check` reports the same 34 unrelated existing diagnostics and none from this repair.
+
 ## 2026-08-14 Ponytail Simplification
 
 - Restored `utils/heathcliff_greetings.py` exactly from the supplied pre-deletion source (apart from its CRLF line endings): all time/weather variations, weather commentary, and return-greeting behaviour are preserved.
@@ -18,6 +31,22 @@ This file serves as the **working memory** for all coding agents on the Heathcli
 - Kept approval as the pure `requires_approval()` policy plus the LangGraph resume UI; removed the obsolete Streamlit callback handler and its session mutation helpers.
 - Collapsed the five simple domain-agent response wrappers into `core/subagents/_runner.py`, simplified CLI parsing, and updated persistence/UI/docs to remove document-index claims.
 - Verification: `uv run ruff check --fix . && uv run ruff format .`, `uv lock`, `uv run pytest tests -v -s` (310 passed), `uv run python main.py --help`, and `git diff --check` all passed. `uvx ty check` reports 37 existing diagnostics concentrated in optional audio dependencies and third-party/LangGraph type narrowing.
+
+## 2026-08-15 Real-Service Integration Pass
+
+- Added `scripts/run_live_integration.py`, a text-mode, bounded real-service runner. It saves one JSONL record per query with timestamps, session ID, coordinator stream events, response, approval payload, and specialist tool traces. It deliberately rejects approval-gated draft/calendar actions before any mutation.
+- Added opt-in diagnostic tracing in `core/subagents/_runner.py`, and passed the trace context across the coordinator's worker thread. The custom info agent now records its tool messages too. This is inactive during normal operation.
+- The first real run is local-only at `artifacts/live-integration-20260815.jsonl` (ignored because it includes private service output). Seven calls completed before the free-tier quota was exhausted; its events and responses are preserved, but its per-tool trace arrays are empty because it was generated immediately before the worker-context trace fix.
+- Confirmed successes: live Jersey City weather, three current technology headlines, and Gmail unread-message retrieval. The latter necessarily wrote sender/subject data only to the ignored local audit artifact.
+- Confirmed failures: deep Mount Fuji research exceeded the coordinator 60-second deadline but continued tool/model work after the coordinator returned; Calendar read failed inside `langchain_google_community.calendar.search_events` with malformed JSON parsing; Spotify attempted interactive OAuth and then returned an EOF-derived misleading “nothing playing” response in a noninteractive runner; later Contacts/complex queries hit Gemini free-tier `RESOURCE_EXHAUSTED` (model `gemini-3-flash`, daily quota value 20).
+- Do not rerun the full live suite until the Gemini quota resets. Then run `uv run python scripts/run_live_integration.py --include-approvals --output artifacts/live-integration-<timestamp>.jsonl`; the two mutation-intent cases are rejected by the harness.
+- Final validation: Ruff clean and `uv run pytest tests -v -s` passed (312 tests). `uvx ty check` has 34 pre-existing diagnostics; the trace additions introduced none.
+
+## 2026-08-15 Outbound Identity
+
+- Added `utils/outbound_signature.py`: every Gmail draft, Gmail send, and Telegram message now receives exactly one footer using `Config.MASTER_INFO["full_name"]` (falling back to `name`): `Heathcliff o.b.o {master_name}` followed by `This is sent by Heathcliff an Autonomous Intelligence system. It may make mistakes.`
+- Gmail enforcement happens at the toolkit send/draft message builders, and Telegram enforcement at `send_to_telegram`; it cannot be omitted by the model prompt. Calendar descriptions and regular assistant chat responses are intentionally unchanged.
+- Added MIME-level draft/send regression coverage plus Telegram coverage in `tests/test_outbound_signature.py` and `tests/test_action_execution.py`. `tests/test_greetings.py` now validates required greeting content rather than a random exact phrase. Full validation passed (314 tests); `ty` remains at 34 existing diagnostics with none from this feature.
 
 ## 2026-08-13 Approval Policy and Resumable Actions
 

@@ -9,6 +9,7 @@ from telegram import Bot as TelegramBot
 
 from config import Config
 from logger import logger
+from utils.outbound_signature import append_outbound_signature
 
 _telegram_bot = None
 
@@ -48,7 +49,9 @@ def send_to_telegram(message: str) -> str:
             logger.warning("Telegram chat ID not configured")
             return "Telegram chat ID not configured"
 
-        asyncio.run(bot.send_message(chat_id=chat_id, text=message))
+        asyncio.run(
+            bot.send_message(chat_id=chat_id, text=append_outbound_signature(message))
+        )
         logger.info("Telegram message sent successfully")
         return "Message sent to Telegram successfully"
 

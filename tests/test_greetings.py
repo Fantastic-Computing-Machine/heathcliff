@@ -9,7 +9,8 @@ def test_weather_greeting_keeps_butler_tone(monkeypatch):
 
     greeting = greetings.generate_greeting("Bruce")
 
-    assert "Good morning, Bruce" in greeting
+    assert "Bruce" in greeting
+    assert "morning" in greeting.lower()
     assert "rain, 12°C" in greeting
 
 

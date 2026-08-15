@@ -12,6 +12,7 @@ from langchain.tools import tool
 from langgraph.errors import GraphRecursionError
 
 from config import Config
+from core.subagents._runner import record_agent_invocation
 from core.subagents.info.recent_context import recent_context
 from core.subagents.info.tools import get_info_tools
 from logger import logger
@@ -226,6 +227,7 @@ def _invoke_info_agent(agent: Any, request: str, mode: str) -> str:
         {"messages": [{"role": "user", "content": request}]},
         {"recursion_limit": _recursion_limit_for_mode(mode)},
     )
+    record_agent_invocation("info_agent", request, result.get("messages", []))
     return _extract_response(result)
 
 
