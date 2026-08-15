@@ -1,27 +1,30 @@
-# ABOUTME: Information retrieval tools for weather, news, web search, and Wikipedia
-# ABOUTME: Integrates OpenWeatherMap, NewsAPI, LangChain search tools, and Wikipedia APIs
+# ABOUTME: Information retrieval tools for weather, news, web search, Wikipedia, Wikidata, StackExchange, and NASA
+# ABOUTME: Integrates LangChain community wrappers/toolkits with recent-context capture
 
 from __future__ import annotations
 
-import inspect
 import json
 import os
 from typing import Any, Dict, List, Optional
 
 import requests
-import wikipedia
 from bs4 import BeautifulSoup
 from langchain.tools import tool
+from langchain_community.agent_toolkits.nasa.toolkit import NasaToolkit
 from langchain_community.tools import YouTubeSearchTool
 from langchain_community.tools.ddg_search.tool import (
     DuckDuckGoSearchResults as DuckDuckGoSearchTool,
 )
 from langchain_community.tools.google_search import GoogleSearchResults
+from langchain_community.tools.stackexchange.tool import StackExchangeTool
+from langchain_community.tools.wikidata.tool import WikidataAPIWrapper, WikidataQueryRun
 from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 from langchain_community.utilities import (
     GoogleSearchAPIWrapper,
     OpenWeatherMapAPIWrapper,
+    StackExchangeAPIWrapper,
 )
+from langchain_community.utilities.nasa import NasaAPIWrapper
 
 from config import Config
 from core.subagents.info.recent_context import _capture_recent_result, recent_context
@@ -29,47 +32,26 @@ from logger import logger
 
 _google_tool: Optional[Any] = None
 _duck_tool: Optional[Any] = None
+_wikidata_tool: Optional[Any] = None
+_stackexchange_tool: Optional[Any] = None
+_nasa_tools: Optional[Dict[str, Any]] = None
 
 
-def _filter_kwargs_for_cls(cls: Any, candidate: Dict[str, Any]) -> Dict[str, Any]:
-    """Filter keyword arguments so we only pass parameters the class expects."""
-
-    if cls is None:
-        return {}
-
-    try:
-        sig = inspect.signature(cls.__init__)
-    except (TypeError, ValueError):
-        return {}
-
-    return {k: v for k, v in candidate.items() if k in sig.parameters}
-
-
-def _ensure_google_search_env(config) -> None:
-    """Make sure Google Custom Search keys are available to LangChain."""
-
-    if config.google_search_api_key and not os.getenv("GOOGLE_API_KEY"):
-        os.environ["GOOGLE_API_KEY"] = config.google_search_api_key
-
-    if config.google_search_cse_id and not os.getenv("GOOGLE_CSE_ID"):
-        os.environ["GOOGLE_CSE_ID"] = config.google_search_cse_id
-
-
-def _init_google_tool(max_results: int) -> Optional[Any]:
+def _init_google_tool(config) -> Optional[Any]:
     """Lazily instantiate the Google search tool."""
 
     global _google_tool
 
     if _google_tool is None:
         try:
-            # Create the API wrapper with environment credentials
-            api_wrapper = GoogleSearchAPIWrapper()
-
-            # Pass the wrapper to GoogleSearchResults
+            api_wrapper = GoogleSearchAPIWrapper(
+                google_api_key=config.GOOGLE_CSE_API_KEY,
+                google_cse_id=config.GOOGLE_CSE_ID,
+            )
             _google_tool = GoogleSearchResults(api_wrapper=api_wrapper)
             logger.info("Google search tool initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize Google search: {e}", exc_info=True)
+        except Exception as exc:
+            logger.error(f"Failed to initialize Google search: {exc}", exc_info=True)
             return None
 
     return _google_tool
@@ -86,8 +68,76 @@ def _init_duck_tool() -> Optional[Any]:
     return _duck_tool
 
 
+def _init_wikidata_tool() -> Optional[Any]:
+    """Lazily instantiate the LangChain Wikidata tool."""
+
+    global _wikidata_tool
+
+    if _wikidata_tool is None:
+        try:
+            _wikidata_tool = WikidataQueryRun(
+                api_wrapper=WikidataAPIWrapper(
+                    top_k_results=2,
+                    doc_content_chars_max=5000,
+                    lang="en",
+                )
+            )
+            logger.info("Wikidata tool initialized successfully")
+        except Exception as exc:
+            logger.warning(
+                "Wikidata tool unavailable: %s. Install `mediawikiapi` and "
+                "`wikibase-rest-api-client`.",
+                exc,
+            )
+            return None
+
+    return _wikidata_tool
+
+
+def _init_stackexchange_tool() -> Optional[Any]:
+    """Lazily instantiate the LangChain StackExchange tool."""
+
+    global _stackexchange_tool
+
+    if _stackexchange_tool is None:
+        try:
+            _stackexchange_tool = StackExchangeTool(
+                api_wrapper=StackExchangeAPIWrapper(max_results=3, query_type="all")
+            )
+            logger.info("StackExchange tool initialized successfully")
+        except Exception as exc:
+            logger.warning(
+                "StackExchange tool unavailable: %s. Install `stackapi`.",
+                exc,
+            )
+            return None
+
+    return _stackexchange_tool
+
+
+def _init_nasa_tools() -> Optional[Dict[str, Any]]:
+    """Lazily instantiate NASA toolkit tools keyed by operation mode."""
+
+    global _nasa_tools
+
+    if _nasa_tools is None:
+        try:
+            toolkit = NasaToolkit.from_nasa_api_wrapper(NasaAPIWrapper())
+            _nasa_tools = {}
+            for nasa_tool in toolkit.get_tools():
+                mode = getattr(nasa_tool, "mode", None)
+                if mode:
+                    _nasa_tools[mode] = nasa_tool
+            logger.info("NASA toolkit initialized with %d tools", len(_nasa_tools))
+        except Exception as exc:
+            logger.warning(f"NASA toolkit unavailable: {exc}")
+            return None
+
+    return _nasa_tools
+
+
 def _format_search_result(result: Any) -> str:
-    """Normalize LangChain search responses into a human-friendly string."""
+    """Normalize tool responses into a human-friendly string."""
 
     if not result:
         return ""
@@ -115,31 +165,142 @@ def _format_search_result(result: Any) -> str:
     return str(result)
 
 
+def _search_wikipedia(query: str) -> str:
+    """Search Wikipedia through its supported REST API."""
+    response = requests.get(
+        "https://en.wikipedia.org/w/rest.php/v1/search/page",
+        params={"q": query, "limit": 3},
+        headers={"User-Agent": "Heathcliff/0.1"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    pages = response.json().get("pages", [])
+    lines = []
+    for page in pages:
+        title = page.get("title", "Wikipedia result")
+        description = page.get("description", "")
+        excerpt = BeautifulSoup(page.get("excerpt", ""), "html.parser").get_text(
+            " ", strip=True
+        )
+        lines.append(" — ".join(part for part in [title, description, excerpt] if part))
+    return "\n".join(lines)
+
+
 def _dispatch_search(provider: str, query: str, max_results: int, config) -> str:
     """Execute the configured search provider via LangChain tools."""
 
     provider = (provider or "").lower()
 
     if provider == "google":
-        _ensure_google_search_env(config)
-        tool = _init_google_tool(max_results)
-        if not tool:
+        google_tool = _init_google_tool(config)
+        if not google_tool:
             return ""
         try:
-            return _format_search_result(tool.run(query))
+            return _format_search_result(google_tool.run(query))
         except Exception as exc:  # pragma: no cover - network errors
             return f"Google search error: {exc}"
 
     if provider == "duckduckgo":
-        tool = _init_duck_tool()
-        if not tool:
+        duck_tool = _init_duck_tool()
+        if not duck_tool:
             return ""
         try:
-            return _format_search_result(tool.run(query))
+            return _format_search_result(duck_tool.run(query))
         except Exception as exc:  # pragma: no cover - network errors
             return f"DuckDuckGo search error: {exc}"
 
     return ""
+
+
+def _truncate(text: str, max_chars: int = 260) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3].rstrip() + "..."
+
+
+def _format_nasa_search(raw: str, max_results: int = 5) -> str:
+    """Summarize NASA search JSON payload into compact, readable results."""
+
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _format_search_result(raw)
+
+    collection = payload.get("collection", {}) if isinstance(payload, dict) else {}
+    items = collection.get("items", []) if isinstance(collection, dict) else []
+
+    if not items:
+        return "No NASA media results found."
+
+    lines: List[str] = []
+    for item in items[:max_results]:
+        data = item.get("data", [{}])
+        info = data[0] if data and isinstance(data[0], dict) else {}
+        title = info.get("title") or "Untitled"
+        nasa_id = info.get("nasa_id") or "N/A"
+        created = info.get("date_created") or "Unknown date"
+        media_type = info.get("media_type") or "unknown"
+        description = _truncate(info.get("description", ""), 220)
+
+        media_url = ""
+        links = item.get("links", [])
+        if links and isinstance(links[0], dict):
+            media_url = links[0].get("href", "")
+
+        parts = [
+            f"Title: {title}",
+            f"NASA ID: {nasa_id}",
+            f"Type: {media_type}",
+            f"Created: {created}",
+        ]
+        if description:
+            parts.append(f"Description: {description}")
+        if media_url:
+            parts.append(f"Link: {media_url}")
+
+        lines.append("\n".join(parts))
+
+    return "\n\n".join(lines)
+
+
+def _format_nasa_manifest(raw: str, nasa_id: str) -> str:
+    """Format NASA asset manifest links for readability."""
+
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _format_search_result(raw)
+
+    collection = payload.get("collection", {}) if isinstance(payload, dict) else {}
+    items = collection.get("items", []) if isinstance(collection, dict) else []
+
+    if not items:
+        return f"No manifest entries found for NASA asset: {nasa_id}"
+
+    links: List[str] = []
+    for item in items[:15]:
+        if isinstance(item, dict) and item.get("href"):
+            links.append(f" - {item['href']}")
+
+    if not links:
+        return f"No manifest links found for NASA asset: {nasa_id}"
+
+    return f"Manifest links for NASA asset {nasa_id}:\n" + "\n".join(links)
+
+
+def _format_nasa_location(raw: str, label: str, nasa_id: str) -> str:
+    """Format single-location NASA responses (metadata/captions)."""
+
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _format_search_result(raw)
+
+    location = payload.get("location") if isinstance(payload, dict) else None
+    if not location:
+        return f"No {label} location found for NASA asset: {nasa_id}"
+
+    return f"{label.capitalize()} location for NASA asset {nasa_id}: {location}"
 
 
 @tool
@@ -159,7 +320,6 @@ def get_weather(location: str | None = None) -> str:
         if not api_key:
             return "Weather API key not configured"
 
-        # The wrapper uses os.environ for the API key
         if "OPENWEATHERMAP_API_KEY" not in os.environ:
             os.environ["OPENWEATHERMAP_API_KEY"] = api_key
 
@@ -168,22 +328,19 @@ def get_weather(location: str | None = None) -> str:
             location = Config.DEFAULT_CITY
 
         logger.debug(f"Fetching weather for location: {location}")
-
-        # The LangChain wrapper abstracts away the url and parameters
         weather_wrapper = OpenWeatherMapAPIWrapper()
-
-        # It returns a string containing weather information
         weather_data = weather_wrapper.run(location)
         _capture_recent_result("get_weather", weather_data)
 
         logger.info(f"Weather retrieved for {location} using OpenWeatherMapAPIWrapper")
         return weather_data
 
-    except Exception as e:
+    except Exception as exc:
         logger.error(
-            f"Error fetching weather with wrapper for {location}: {e}", exc_info=True
+            f"Error fetching weather with wrapper for {location}: {exc}",
+            exc_info=True,
         )
-        return f"Error fetching weather data: {str(e)}"
+        return f"Error fetching weather data: {str(exc)}"
 
 
 @tool
@@ -204,7 +361,6 @@ def get_news(category: str = "technology") -> str:
         if not api_key:
             return "News API key not configured"
 
-        sources = config.DEFAULT_SOURCES
         max_articles = config.MAX_ARTICLES
 
         url = "https://newsapi.org/v2/top-headlines"
@@ -218,7 +374,6 @@ def get_news(category: str = "technology") -> str:
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
-
         articles = data.get("articles", [])
 
         if not articles:
@@ -235,10 +390,10 @@ def get_news(category: str = "technology") -> str:
         _capture_recent_result("get_news", result)
         return result
 
-    except requests.exceptions.RequestException as e:
-        return f"Error fetching news: {str(e)}"
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except requests.exceptions.RequestException as exc:
+        return f"Error fetching news: {str(exc)}"
+    except Exception as exc:
+        return f"Error: {str(exc)}"
 
 
 @tool
@@ -256,7 +411,6 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
     try:
         config = Config
         max_results = 5
-        # Use DuckDuckGo as primary search, fallback gracefully
         primary_provider = provider or "duckduckgo"
         response = _dispatch_search(primary_provider, query, max_results, config)
 
@@ -264,37 +418,27 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
             _capture_recent_result("search_web", response)
             return response
 
-        # Automatic chained fallback
-        fallbacks = ["google"]
-        for fallback in fallbacks:
+        for fallback in ["google"]:
             if fallback != primary_provider:
-                fb_resp = _dispatch_search(fallback, query, max_results, config)
-                if fb_resp:
-                    _capture_recent_result("search_web", fb_resp)
-                    return fb_resp
+                fallback_response = _dispatch_search(
+                    fallback, query, max_results, config
+                )
+                if fallback_response:
+                    _capture_recent_result("search_web", fallback_response)
+                    return fallback_response
 
-        # Final fallback: Wikipedia summary search
-        wiki_results = wikipedia.search(query, results=3)
-        if not wiki_results:
-            return f"No search results found for: {query}"
-
-        summaries = []
-        for result in wiki_results:
-            try:
-                summary = wikipedia.summary(result, sentences=2)
-                summaries.append(f"{result}:\n{summary}")
-            except Exception:
-                continue
-
-        if summaries:
-            result = "\n\n".join(summaries)
-            _capture_recent_result("search_web", result)
-            return result
+        try:
+            wiki_response = _search_wikipedia(query)
+            if wiki_response:
+                _capture_recent_result("search_web", wiki_response)
+                return wiki_response
+        except requests.RequestException as exc:
+            logger.warning("Wikipedia fallback failed for '%s': %s", query, exc)
 
         return f"No search results found for: {query}"
 
-    except Exception as e:
-        return f"Error searching web: {str(e)}"
+    except Exception as exc:
+        return f"Error searching web: {str(exc)}"
 
 
 @tool
@@ -306,67 +450,229 @@ def wikipedia_search(query: str) -> str:
         query: Wikipedia search query
 
     Returns:
-        Full Wikipedia article content
+        Encyclopedia summaries and page snippets
     """
     try:
         logger.debug(f"Searching Wikipedia for: {query}")
+        result = _search_wikipedia(query)
+        if not result:
+            return f"No Wikipedia page found for: {query}"
+        _capture_recent_result("wikipedia_search", result)
+        return result
+    except requests.RequestException as exc:
+        logger.warning("Wikipedia search failed for '%s': %s", query, exc)
+        return "Wikipedia is temporarily unavailable. Please try another source."
 
-        # Search for the query
-        results = wikipedia.search(query, results=3)  # Get top 3 results
 
-        if not results:
-            logger.warning(f"No Wikipedia search results for: {query}")
-            return f"No Wikipedia articles found for: {query}"
+@tool
+def wikidata_search(query: str) -> str:
+    """
+    Search Wikidata for structured entity facts.
 
-        logger.debug(f"Wikipedia search results: {results}")
+    Args:
+        query: Entity name or Wikidata QID (e.g. "Alan Turing" or "Q7251")
 
-        # Try each result until we find one that works
-        for result_title in results:
-            try:
-                logger.debug(f"Attempting to fetch full article for: {result_title}")
-                page = wikipedia.page(result_title, auto_suggest=False)
-                logger.info(
-                    f"Successfully retrieved Wikipedia article for: {result_title}"
-                )
-                result = f"{result_title} (Full Text):\n{page.content}"
-                _capture_recent_result("wikipedia_search", result)
-                return result
-            except wikipedia.exceptions.PageError:
-                logger.debug(f"PageError for {result_title}, trying next result")
-                continue
-            except wikipedia.exceptions.DisambiguationError as e:
-                logger.debug(
-                    f"DisambiguationError for {result_title}, trying first option"
-                )
-                # Try the first disambiguation option
-                if e.options:
-                    try:
-                        page = wikipedia.page(e.options[0], auto_suggest=False)
-                        logger.info(
-                            f"Retrieved disambiguated full article for: {e.options[0]}"
-                        )
-                        result = f"{e.options[0]} (Full Text):\n{page.content}"
-                        _capture_recent_result("wikipedia_search", result)
-                        return result
-                    except:
-                        continue
-
-        # If we exhausted all results
-        logger.warning(
-            f"Failed to retrieve summary for any Wikipedia result for: {query}"
+    Returns:
+        Structured Wikidata facts for top matching entities
+    """
+    wikidata_tool = _init_wikidata_tool()
+    if not wikidata_tool:
+        return (
+            "Wikidata tool unavailable. Install `mediawikiapi` and "
+            "`wikibase-rest-api-client` to enable it."
         )
-        return f"No Wikipedia page found for: {query}"
 
-    except wikipedia.exceptions.DisambiguationError as e:
-        # Handle top-level disambiguation
-        options = ", ".join(e.options[:5])
-        logger.debug(f"Top-level disambiguation for '{query}': {options}")
-        return f"Multiple results found for '{query}'. Please be more specific. Options: {options}"
-    except Exception as e:
+    try:
+        logger.debug(f"Searching Wikidata for: {query}")
+        result = _format_search_result(wikidata_tool.run(query))
+        if not result:
+            return f"No Wikidata result found for: {query}"
+        _capture_recent_result("wikidata_search", result)
+        return result
+    except Exception as exc:
+        logger.error(f"Error searching Wikidata for '{query}': {exc}", exc_info=True)
+        return f"Error searching Wikidata: {str(exc)}"
+
+
+@tool
+def stackexchange_search(query: str) -> str:
+    """
+    Search Stack Overflow for programming Q&A.
+
+    Args:
+        query: Coding problem or debugging question
+
+    Returns:
+        Relevant Stack Overflow question/answer excerpts
+    """
+    stack_tool = _init_stackexchange_tool()
+    if not stack_tool:
+        return "StackExchange tool unavailable. Install `stackapi` to enable it."
+
+    try:
+        logger.debug(f"Searching StackExchange for: {query}")
+        result = _format_search_result(stack_tool.run(query))
+        if not result:
+            return f"No Stack Overflow results found for: {query}"
+        _capture_recent_result("stackexchange_search", result)
+        return result
+    except Exception as exc:
         logger.error(
-            f"Unexpected error searching Wikipedia for '{query}': {e}", exc_info=True
+            f"Error searching StackExchange for '{query}': {exc}",
+            exc_info=True,
         )
-        return f"Error searching Wikipedia: {str(e)}"
+        return f"Error searching StackExchange: {str(exc)}"
+
+
+@tool
+def nasa_media_search(
+    query: str,
+    media_type: Optional[str] = None,
+    year_start: Optional[int] = None,
+    year_end: Optional[int] = None,
+    page_size: int = 5,
+) -> str:
+    """
+    Search NASA's Image and Video Library.
+
+    Args:
+        query: Free-text search term (e.g. "moon", "Apollo 11")
+        media_type: Optional filter (image, video, audio)
+        year_start: Optional start year (YYYY)
+        year_end: Optional end year (YYYY)
+        page_size: Number of results to request/summarize (1-10)
+
+    Returns:
+        Summarized NASA media results with IDs and links
+    """
+    nasa_tools = _init_nasa_tools()
+    if not nasa_tools or "search_media" not in nasa_tools:
+        return "NASA media search tool is currently unavailable."
+
+    if not query.strip():
+        return "Please provide a NASA media search query."
+
+    safe_page_size = max(1, min(page_size, 10))
+    params: Dict[str, Any] = {"q": query.strip(), "page_size": safe_page_size}
+
+    if media_type:
+        normalized_media_type = media_type.strip().lower()
+        allowed_media_types = {"image", "video", "audio"}
+        if normalized_media_type not in allowed_media_types:
+            return "media_type must be one of: image, video, audio"
+        params["media_type"] = normalized_media_type
+
+    if year_start is not None:
+        params["year_start"] = str(year_start)
+    if year_end is not None:
+        params["year_end"] = str(year_end)
+
+    payload = json.dumps(params)
+
+    try:
+        raw_result = nasa_tools["search_media"].invoke(payload)
+        result = _format_nasa_search(str(raw_result), max_results=safe_page_size)
+        _capture_recent_result("nasa_media_search", result)
+        return result
+    except Exception as exc:
+        logger.error(f"NASA media search failed for '{query}': {exc}", exc_info=True)
+        return f"Error searching NASA media: {str(exc)}"
+
+
+@tool
+def nasa_media_manifest(nasa_id: str) -> str:
+    """
+    Get NASA asset manifest links for a NASA media ID.
+
+    Args:
+        nasa_id: NASA media identifier
+
+    Returns:
+        Download/asset manifest links for the media item
+    """
+    nasa_tools = _init_nasa_tools()
+    if not nasa_tools or "get_media_metadata_manifest" not in nasa_tools:
+        return "NASA manifest tool is currently unavailable."
+
+    clean_id = nasa_id.strip()
+    if not clean_id:
+        return "Please provide a NASA media ID."
+
+    try:
+        raw_result = nasa_tools["get_media_metadata_manifest"].invoke(clean_id)
+        result = _format_nasa_manifest(str(raw_result), clean_id)
+        _capture_recent_result("nasa_media_manifest", result)
+        return result
+    except Exception as exc:
+        logger.error(
+            f"NASA manifest lookup failed for '{clean_id}': {exc}",
+            exc_info=True,
+        )
+        return f"Error fetching NASA manifest: {str(exc)}"
+
+
+@tool
+def nasa_media_metadata(nasa_id: str) -> str:
+    """
+    Get NASA metadata location URL for a NASA media ID.
+
+    Args:
+        nasa_id: NASA media identifier
+
+    Returns:
+        URL to metadata JSON for the media item
+    """
+    nasa_tools = _init_nasa_tools()
+    if not nasa_tools or "get_media_metadata_location" not in nasa_tools:
+        return "NASA metadata tool is currently unavailable."
+
+    clean_id = nasa_id.strip()
+    if not clean_id:
+        return "Please provide a NASA media ID."
+
+    try:
+        raw_result = nasa_tools["get_media_metadata_location"].invoke(clean_id)
+        result = _format_nasa_location(str(raw_result), "metadata", clean_id)
+        _capture_recent_result("nasa_media_metadata", result)
+        return result
+    except Exception as exc:
+        logger.error(
+            f"NASA metadata lookup failed for '{clean_id}': {exc}",
+            exc_info=True,
+        )
+        return f"Error fetching NASA metadata location: {str(exc)}"
+
+
+@tool
+def nasa_video_captions(nasa_id: str) -> str:
+    """
+    Get NASA video captions location URL for a NASA media ID.
+
+    Args:
+        nasa_id: NASA video media identifier
+
+    Returns:
+        URL to captions for the media item
+    """
+    nasa_tools = _init_nasa_tools()
+    if not nasa_tools or "get_video_captions_location" not in nasa_tools:
+        return "NASA captions tool is currently unavailable."
+
+    clean_id = nasa_id.strip()
+    if not clean_id:
+        return "Please provide a NASA media ID."
+
+    try:
+        raw_result = nasa_tools["get_video_captions_location"].invoke(clean_id)
+        result = _format_nasa_location(str(raw_result), "captions", clean_id)
+        _capture_recent_result("nasa_video_captions", result)
+        return result
+    except Exception as exc:
+        logger.error(
+            f"NASA captions lookup failed for '{clean_id}': {exc}",
+            exc_info=True,
+        )
+        return f"Error fetching NASA captions location: {str(exc)}"
 
 
 @tool
@@ -384,28 +690,27 @@ def read_website(url: str) -> str:
     try:
         logger.debug(f"Reading website: {url}")
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            )
         }
         response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Remove script and style elements
         for script in soup(["script", "style", "nav", "footer", "header", "aside"]):
             script.extract()
 
-        # Get text
         text = soup.get_text(separator=" ", strip=True)
 
-        # Clean up excessive whitespace
         lines = (line.strip() for line in text.splitlines())
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         text = "\n".join(chunk for chunk in chunks if chunk)
 
         logger.info(f"Successfully extracted {len(text)} characters from {url}")
 
-        # Guard against massive pages choking the context window
         if len(text) > 15000:
             text = text[:15000] + "... [Content truncated due to length]"
 
@@ -419,11 +724,11 @@ def read_website(url: str) -> str:
 
     except requests.exceptions.Timeout:
         return f"Error: Request timed out while trying to fetch {url}"
-    except requests.exceptions.RequestException as e:
-        return f"Error fetching website {url}: {str(e)}"
-    except Exception as e:
-        logger.error(f"Unexpected error reading {url}: {e}", exc_info=True)
-        return f"Error processing website: {str(e)}"
+    except requests.exceptions.RequestException as exc:
+        return f"Error fetching website {url}: {str(exc)}"
+    except Exception as exc:
+        logger.error(f"Unexpected error reading {url}: {exc}", exc_info=True)
+        return f"Error processing website: {str(exc)}"
 
 
 def finance_news_tool() -> List[Any]:
@@ -456,6 +761,12 @@ def get_info_tools() -> List[Any]:
         get_news,
         search_web,
         wikipedia_search,
+        wikidata_search,
+        stackexchange_search,
+        nasa_media_search,
+        nasa_media_manifest,
+        nasa_media_metadata,
+        nasa_video_captions,
         read_website,
         recent_context,
     ]

@@ -1,7 +1,7 @@
-# ABOUTME: Communication tools for Telegram messaging and Google Drive file access
-# ABOUTME: Integrates Telegram Bot API and Google Drive API
+# ABOUTME: Communication tools for Telegram messaging
+# ABOUTME: Integrates the asynchronous Telegram Bot API with sync LangChain tools
 
-import io
+import asyncio
 from typing import Any, List
 
 from langchain.tools import tool
@@ -9,7 +9,6 @@ from telegram import Bot as TelegramBot
 
 from config import Config
 from logger import logger
-from utils.google_auth import get_google_credentials
 
 _telegram_bot = None
 
@@ -49,9 +48,9 @@ def send_to_telegram(message: str) -> str:
             logger.warning("Telegram chat ID not configured")
             return "Telegram chat ID not configured"
 
-        bot.send_message(chat_id=chat_id, text=message)
+        asyncio.run(bot.send_message(chat_id=chat_id, text=message))
         logger.info("Telegram message sent successfully")
-        return f"Message sent to Telegram successfully"
+        return "Message sent to Telegram successfully"
 
     except Exception as e:
         logger.error(f"Error sending Telegram message: {e}", exc_info=True)

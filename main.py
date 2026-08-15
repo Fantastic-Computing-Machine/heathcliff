@@ -1,22 +1,24 @@
 # ABOUTME: Main entry point for Heathcliff voice assistant
 # ABOUTME: Orchestrates audio, agent, and memory components
 
+import argparse
 import signal
 import sys
 import uuid
+from typing import Any, Optional
 
 from config import Config
 from core.agent_core import HeathcliffAgent
-from core.audio_handler import AudioHandler
-from core.memory_manager import AgentMemoryError, MemoryManager
+from db.memory_manager import MemoryManager
 from logger import logger
+from utils.errors import AgentMemoryError
 
 
 class HeathcliffAssistant:
     """Main orchestrator for the Heathcliff voice assistant."""
 
-    def __init__(self):
-        """Initialize all components."""
+    def __init__(self, enable_audio: bool = True):
+        """Initialize core components and optionally the voice stack."""
         logger.info("Starting Heathcliff Assistant...")
 
         # Initialize memory manager
@@ -32,14 +34,17 @@ class HeathcliffAssistant:
         logger.info("Initialising supervisor agent...")
         self.agent = HeathcliffAgent(memory_manager=self.memory)
 
-        # Initialize audio handler
-        logger.info("Initializing audio handler...")
-        wake_word = Config.WAKE_WORD
-        self.audio = AudioHandler(wake_word=wake_word)
+        self.audio: Optional[Any] = None
+        if enable_audio:
+            logger.info("Initializing audio handler...")
+            from core.audio_handler import AudioHandler
+
+            self.audio = AudioHandler(wake_word=Config.WAKE_WORD)
 
         # Initialize session
-        self.session_id = str(uuid.uuid4())
-        logger.info(f"Session ID: {self.session_id}")
+        self.conversation_id = str(uuid.uuid4())
+        self.pending_approval: Optional[dict[str, Any]] = None
+        logger.info(f"Conversation ID: {self.conversation_id}")
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -53,7 +58,8 @@ class HeathcliffAssistant:
     def _signal_handler(self, sig, frame):
         """Handle shutdown signals gracefully."""
         logger.info("\nShutting down Heathcliff Assistant...")
-        self.audio.stop()
+        if self.audio is not None:
+            self.audio.stop()
         logger.info("Goodbye!")
         sys.exit(0)
 
@@ -69,7 +75,7 @@ class HeathcliffAssistant:
         """
         try:
             logger.info(f"Processing: {text}")
-            response = self.agent.invoke(text, session_id=self.session_id)
+            response = self.agent.invoke(text, conversation_id=self.conversation_id)
             logger.info(f"Response: {response}")
             return response
         except Exception as e:
@@ -78,6 +84,8 @@ class HeathcliffAssistant:
 
     def run_voice_mode(self):
         """Run in voice-activated mode."""
+        if self.audio is None:
+            raise RuntimeError("Voice mode was not initialized")
         logger.info(f"Starting voice mode. Say '{self.audio.wake_word}' to activate...")
         print(f"\n🎤 Heathcliff is listening for '{self.audio.wake_word}'...\n")
 
@@ -100,7 +108,7 @@ class HeathcliffAssistant:
                 if not user_input:
                     continue
 
-                response = self.process_voice_input(user_input)
+                response = self._process_text_input(user_input)
                 print(f"Heathcliff: {response}\n")
 
             except KeyboardInterrupt:
@@ -110,67 +118,67 @@ class HeathcliffAssistant:
                 logger.error(f"Error in text mode: {e}")
                 print(f"Error: {e}\n")
 
+    def _process_text_input(self, user_input: str) -> str:
+        """Process text input, including approval commands for pending actions."""
+        if self.pending_approval is not None:
+            decision = user_input.lower().strip()
+            if decision in {"approve", "approved", "yes", "y", "sure"}:
+                pending = self.pending_approval
+                self.pending_approval = None
+                return self.agent.resume_approval(
+                    conversation_id=pending["session_id"],
+                    user_input=pending["user_input"],
+                    approved=True,
+                )
+            if decision in {"reject", "rejected", "no", "n", "cancel"}:
+                pending = self.pending_approval
+                self.pending_approval = None
+                return self.agent.resume_approval(
+                    conversation_id=pending["session_id"],
+                    user_input=pending["user_input"],
+                    approved=False,
+                )
+            return "This action is awaiting approval. Type 'approve' or 'reject'."
 
-def main():
+        response = "I encountered an error processing your request."
+        for event in self.agent.stream_invoke(
+            user_input, conversation_id=self.conversation_id
+        ):
+            event_type = event.get("type")
+            if event_type == "approval_required":
+                approval = dict(event.get("data") or {})
+                approval["session_id"] = approval.get(
+                    "session_id", self.conversation_id
+                )
+                approval["user_input"] = user_input
+                self.pending_approval = approval
+                return (
+                    f"Approval required for {approval.get('tool_name', 'this action')}. "
+                    "Type 'approve' (or 'sure') to proceed, or 'reject' to cancel."
+                )
+            if event_type == "response":
+                response = event.get("data") or response
+            elif event_type == "error":
+                response = event.get("data") or response
+        return response
+
+
+def main() -> None:
     """Main entry point."""
-    # Parse command line arguments
-    mode = "voice"  # Default mode
+    parser = argparse.ArgumentParser(description="Heathcliff voice assistant")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--text", "-t", action="store_true", help="run without audio")
+    mode.add_argument("--voice", "-v", action="store_true", help="run with audio")
+    args = parser.parse_args()
 
-    if len(sys.argv) > 1:
-        arg = sys.argv[1]
-
-        # Support both --text and mode=text formats
-        if arg in ["--text", "-t"] or arg == "mode=text":
-            mode = "text"
-        elif arg in ["--voice", "-v"] or arg == "mode=voice":
-            mode = "voice"
-        elif arg.startswith("mode="):
-            # Parse mode=value format
-            mode_value = arg.split("=", 1)[1].lower()
-            if mode_value in ["text", "voice"]:
-                mode = mode_value
-            else:
-                print(f"Error: Invalid mode '{mode_value}'. Must be 'text' or 'voice'.")
-                sys.exit(1)
-        elif arg in ["--help", "-h"]:
-            print("""
-Heathcliff Voice Assistant
-
-Usage:
-    python main.py                  Run in voice mode (default)
-    python main.py "mode=text"      Run in text mode (MUST use quotes!)
-    python main.py "mode=voice"     Run in voice mode (MUST use quotes!)
-    python main.py --text           Run in text mode (recommended)
-    python main.py --voice          Run in voice mode
-    python main.py --help           Show this help message
-
-Note: The mode=text format requires quotes because bash interprets
-      unquoted mode=text as an environment variable assignment.
-      We recommend using --text instead for simplicity.
-
-Voice Mode:
-    - Say the wake word 'heathcliff' to activate
-    - Speak your command
-    - Heathcliff will respond via text-to-speech
-
-Text Mode:
-    - Type your commands
-    - Responses are printed to console
-    - Useful for testing without audio hardware
-            """)
-            sys.exit(0)
-        else:
-            print(f"Error: Unknown argument '{arg}'. Use --help for usage information.")
-            sys.exit(1)
-
-    # Create and run assistant
+    # Text mode is the safe default; audio requires a configured microphone.
     try:
-        assistant = HeathcliffAssistant()
+        assistant = HeathcliffAssistant(enable_audio=args.voice)
 
-        if mode == "text":
-            assistant.run_text_mode()
-        else:
+        if args.voice:
             assistant.run_voice_mode()
+        else:
+            assistant.run_text_mode()
 
     except Exception as e:
         logger.error(f"Fatal error: {e}")

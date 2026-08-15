@@ -12,7 +12,7 @@ sys.path.insert(
 )
 
 from config import Config
-from core.memory_manager import MemoryManager
+from db.memory_manager import MemoryManager
 
 st.set_page_config(page_title="Memories", page_icon="🧠", layout="wide")
 

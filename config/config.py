@@ -14,6 +14,15 @@ load_dotenv(".env")
 MASTER_INFO_LOC = "master_info.toml"
 
 
+def _ai_api_key() -> Optional[str]:
+    """Return the provider-neutral AI key, accepting legacy names during migration."""
+    return (
+        os.getenv("AI_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+    )
+
+
 class MasterConf:
     MASTER_INFO = {}
     TZ = "America/New_York"
@@ -59,8 +68,9 @@ class ChromaConf:
 class RuntimeConf:
     # Model def
     # MODEL = "gemini-2.5-flash-lite"
-    SUPERVISOR_MODEL = "google_genai:gemini-3-flash-preview"
-    TOOL_MODEL = "google_genai:gemini-2.5-pro"
+    SUPERVISOR_MODEL = "google_genai:gemini-3.1-flash-lite-preview"
+    SUBAGENT_MODEL = "google_genai:gemini-3.1-flash-lite-preview"
+    TOOL_MODEL = "google_genai:gemini-3-flash-preview"
     # Supervisor Hyperparameters
     TEMPERATURE = 0.5
     MAX_TOKENS = 8192
@@ -71,15 +81,21 @@ class RuntimeConf:
 
 
 class PlatformConf:
-    # Google / Gemini API Keys
-    AI_KEY = os.getenv("AI_KEY")
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+    # Provider-neutral AI key. Legacy Gemini names are accepted by _ai_api_key.
+    AI_KEY = _ai_api_key()
     GOOGLE_APPLICATION_CREDENTIALS = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"
     )
     # Google Search
     GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
     GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
+
+    @classmethod
+    def get_ai_api_key(cls) -> str:
+        """Return the configured provider-neutral AI key."""
+        if not cls.AI_KEY:
+            raise ValueError("AI_KEY is not set in the environment.")
+        return cls.AI_KEY
 
     # Spotify API Credentials
     SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -107,28 +123,26 @@ class Mem0Conf:
     # Number of semantic history message pairs retrieved per query
     SEMANTIC_PAIRS_COUNT = 3
 
-    MEMORY_COLLECTION = "heathcliff_memories"
-
     _llm_config: Dict[str, Any] = {
         "provider": "gemini",
         "config": {
             "model": "gemini-2.5-flash-lite",
             "temperature": 0.2,
-            "api_key": os.getenv("GOOGLE_API_KEY"),
+            "api_key": PlatformConf.get_ai_api_key(),
         },
     }
     _embedder_config: Dict[str, Any] = {
         "provider": "gemini",
         "config": {
             "model": "models/gemini-embedding-001",
-            "api_key": os.getenv("GOOGLE_API_KEY"),
+            "api_key": PlatformConf.get_ai_api_key(),
         },
     }
 
     _vector_store_config: Dict[str, Any] = {
         "provider": "chroma",
         "config": {
-            "collection_name": MEMORY_COLLECTION,
+            "collection_name": "heathcliff_memories",
             "host": ChromaConf.CHROMA_HOST,
             "port": ChromaConf.CHROMA_PORT,
             "api_key": ChromaConf.CHROMA_API_KEY,
@@ -188,6 +202,18 @@ class WeatherConfig:
     UNITS = os.getenv("WEATHER_UNITS", "metric")
 
 
+class InfoAgentConfig:
+    # Adaptive routing + recursion controls for info subagent
+    INFO_ADAPTIVE_ROUTING_ENABLED = (
+        os.getenv("INFO_ADAPTIVE_ROUTING_ENABLED", "true").lower() == "true"
+    )
+    INFO_FAST_TO_DEEP_ESCALATION_ENABLED = (
+        os.getenv("INFO_FAST_TO_DEEP_ESCALATION_ENABLED", "true").lower() == "true"
+    )
+    INFO_FAST_RECURSION_LIMIT = int(os.getenv("INFO_FAST_RECURSION_LIMIT", "12"))
+    INFO_DEEP_RECURSION_LIMIT = int(os.getenv("INFO_DEEP_RECURSION_LIMIT", "45"))
+
+
 class RecentContextConfig:
     # Recent context snippet store
     RECENT_CONTEXT_TTL_SECONDS = int(os.getenv("RECENT_CONTEXT_TTL_SECONDS", "7200"))
@@ -210,6 +236,14 @@ class AudioConfig:
     TTS_VOICE = None
 
 
+class CoordinatorConf:
+    """Budget and execution limits for the coordinator graph."""
+
+    MAX_TASKS_PER_REQUEST = int(os.getenv("COORDINATOR_MAX_TASKS", "10"))
+    PER_TASK_TIMEOUT_MS = int(os.getenv("COORDINATOR_TASK_TIMEOUT_MS", "60000"))
+    MAX_TOTAL_RUNTIME_MS = int(os.getenv("COORDINATOR_MAX_RUNTIME_MS", "300000"))
+
+
 class Conf(
     RuntimeConf,
     MasterConf,
@@ -219,8 +253,10 @@ class Conf(
     LangFuseConf,
     NewsConfig,
     WeatherConfig,
+    InfoAgentConfig,
     RecentContextConfig,
     AudioConfig,
+    CoordinatorConf,
 ):
     _instance: Optional["Conf"] = None
 
@@ -235,8 +271,6 @@ class Conf(
         missing_keys = []
         if not cls.AI_KEY:
             missing_keys.append("AI_KEY")
-        if not cls.GOOGLE_API_KEY:
-            missing_keys.append("GOOGLE_API_KEY")
         if not cls.CHROMA_API_KEY:
             missing_keys.append("CHROMA_API_KEY")
         if not cls.CHROMA_TENANT:
@@ -247,7 +281,7 @@ class Conf(
         if missing_keys:
             raise ValueError(f"Missing required API keys: {', '.join(missing_keys)}")
 
-        logger.info(f"Configuration validated successfully!")
+        logger.info("Configuration validated successfully!")
 
     def __repr__(self) -> str:
         return f"<Config wake_word='{self.WAKE_WORD}' model='{self.SUPERVISOR_MODEL}'>"

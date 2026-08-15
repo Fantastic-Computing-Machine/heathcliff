@@ -196,6 +196,5 @@ Current User Query:
 """.strip()
 
 # NOTE: Chat history context is injected as actual HumanMessage / AIMessage
-# objects in the message history list — see
-# MemoryManager.build_message_history() and HeathcliffAgent._format_chat_history().
+# objects — see MemoryManager.build_langchain_history() and HeathcliffAgent.invoke().
 # Long-term memories are injected dynamically in USER_PROMPT_TEMPLATE.

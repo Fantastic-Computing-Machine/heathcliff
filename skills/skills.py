@@ -1,6 +1,5 @@
 from typing import TypedDict
 
-from config import Config
 from skills.master_info import MASTER_INFO_DESCRIPTION, get_master_info
 from skills.master_info import get_skill_content as _master_info_content
 

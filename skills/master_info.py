@@ -5,7 +5,7 @@
 import copy
 import json
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from langchain.tools import tool
 

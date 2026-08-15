@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core.agent_core import HeathcliffAgent
-from core.memory_manager import MemoryManager
+from db.memory_manager import MemoryManager
 from logger import logger
 
 # ── Blob config ───────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ app.add_middleware(
 # ── Agent singleton ───────────────────────────────────────────────────
 _memory: MemoryManager | None = None
 _agent: HeathcliffAgent | None = None
-_session_id: str = str(uuid.uuid4())
+_conversation_id: str = str(uuid.uuid4())
 
 
 def _get_agent() -> HeathcliffAgent:
@@ -70,16 +70,24 @@ class StateRequest(BaseModel):
 @app.get("/")
 async def serve_index():
     """Serve the blob UI."""
+    logger.info("Serving blob UI")
+    if not _agent or isinstance(_agent, HeathcliffAgent):
+        logger.info("Initializing Heathcliff...")
+        _get_agent()
+    logger.info("Blob UI ready.")
     return FileResponse(os.path.join(ASSETS_DIR, "index.html"))
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     """Send a message to Heathcliff and get a response."""
-    agent = _get_agent()
+    if not _agent or isinstance(_agent, HeathcliffAgent):
+        logger.info("Initializing Heathcliff...")
+        _get_agent()
+    logger.info("Blob UI ready.")
     try:
         logger.info(f"Blob UI request: {req.message}")
-        response = agent.invoke(req.message, session_id=_session_id)
+        response = _agent.invoke(req.message, conversation_id=_conversation_id)
         logger.info(f"Blob UI response: {response}")
         return ChatResponse(response=response)
     except Exception as e:

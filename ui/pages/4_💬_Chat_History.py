@@ -3,7 +3,6 @@
 
 import os
 import sys
-from datetime import datetime
 
 import streamlit as st
 
@@ -12,8 +11,7 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from config import Config
-from core.memory_manager import MemoryManager
+from db.memory_manager import MemoryManager
 
 st.set_page_config(page_title="Chat History", page_icon="💬", layout="wide")
 
@@ -42,27 +40,25 @@ with st.sidebar:
 
     st.divider()
 
-    # Get sessions
-    sessions = memory.get_all_sessions()
+    # Get conversations
+    conversations = memory.get_all_conversations()
 
-    selected_session_id = None
-    if not sessions:
+    selected_conversation_id = None
+    if not conversations:
         st.warning("No chat history found.")
     else:
-        # Format session options
-        # Sort by start time descending
-        sessions.sort(key=lambda x: x["start_time"], reverse=True)
+        conversations.sort(key=lambda x: x["start_time"], reverse=True)
 
-        session_options = {
-            f"{s['start_time'][:19]} ({s['msg_count']} msgs)": s["session_id"]
-            for s in sessions
+        conversation_options = {
+            f"{c['start_time'][:19]} ({c['msg_count']} msgs)": c["conversation_id"]
+            for c in conversations
         }
 
         selected_option = st.selectbox(
-            "Select Session", options=list(session_options.keys())
+            "Select Conversation", options=list(conversation_options.keys())
         )
-        selected_session_id = (
-            session_options[selected_option] if selected_option else None
+        selected_conversation_id = (
+            conversation_options[selected_option] if selected_option else None
         )
 
     # Global Actions
@@ -89,43 +85,37 @@ with st.sidebar:
                 st.rerun()
 
 # Main Content
-if selected_session_id:
-    # Display Session Info
+if selected_conversation_id:
     col_header, col_action = st.columns([3, 1])
     with col_header:
-        st.subheader(f"Session ID: `{selected_session_id}`")
+        st.subheader(f"Conversation ID: `{selected_conversation_id}`")
     with col_action:
-        if st.button("🗑️ Delete This Session", type="primary", width="content"):
-            if memory.clear_session(selected_session_id):
-                st.success("Session deleted successfully!")
+        if st.button("🗑️ Delete This Conversation", type="primary", width="content"):
+            if memory.clear_conversation(selected_conversation_id):
+                st.success("Conversation deleted successfully!")
                 st.rerun()
             else:
-                st.error("Failed to delete session.")
+                st.error("Failed to delete conversation.")
 
     st.divider()
 
-    # Get messages
-    messages = memory.get_session_history(selected_session_id)
+    messages = memory.get_conversation_history(selected_conversation_id)
 
     if messages:
         for msg in messages:
             role = msg.get("role", "unknown")
-            timestamp = msg.get("timestamp", "")
+            timestamp = msg.get("created_at", "")
             content = msg.get("content", "")
 
-            # Map role to avatar/name
-            if role == "user":
-                avatar = "👤"
-            else:
-                avatar = "🐦‍🔥"  # Heathcliff icon
+            avatar = "👤" if role == "user" else "🐦‍🔥"
 
             with st.chat_message(role, avatar=avatar):
                 st.markdown(content)
                 st.caption(f"_{timestamp[:19]}_")
     else:
-        st.info("No messages found in this session.")
+        st.info("No messages found in this conversation.")
 
-elif not sessions:
+elif not conversations:
     st.info("No chat history available. Start a conversation in the Home page!")
 else:
-    st.info("👈 Select a session from the sidebar to view conversation history.")
+    st.info("👈 Select a conversation from the sidebar to view history.")

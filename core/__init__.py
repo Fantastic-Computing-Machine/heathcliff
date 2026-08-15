@@ -1,14 +1,17 @@
 # ABOUTME: Core package initialization
 # ABOUTME: Exports core components for Heathcliff assistant
 
+from db.memory_manager import MemoryManager
+
 from .agent_core import HeathcliffAgent
-from .memory_manager import MemoryManager
 
-# AudioHandler has optional dependencies (pyaudio, porcupine) that may not be installed
-try:
-    from .audio_handler import AudioHandler
+__all__ = ["MemoryManager", "AudioHandler", "HeathcliffAgent"]
 
-    __all__ = ["MemoryManager", "AudioHandler", "HeathcliffAgent"]
-except ImportError:
-    AudioHandler = None
-    __all__ = ["MemoryManager", "HeathcliffAgent"]
+
+def __getattr__(name: str):
+    """Load optional audio support only when it is explicitly requested."""
+    if name == "AudioHandler":
+        from .audio_handler import AudioHandler
+
+        return AudioHandler
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

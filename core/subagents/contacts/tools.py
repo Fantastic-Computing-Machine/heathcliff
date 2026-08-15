@@ -1,7 +1,7 @@
 # ABOUTME: Google People API tools for searching contacts
 # ABOUTME: Allows the agent to find email addresses and phone numbers from the user's contact list
 
-from typing import Any, List, Optional
+from typing import Any, List
 
 from googleapiclient.discovery import build
 from langchain.tools import tool

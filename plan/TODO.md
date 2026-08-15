@@ -4,6 +4,50 @@
 
 ---
 
+## Repository Audit and Action Chains (2026-08-02)
+
+- [x] Feed retrieved conversation history into coordinator planning for follow-up clarification turns
+- [x] Add coordinator regression for research → contacts → email dependency output flow
+- [x] Await Telegram API sends before reporting success
+- [x] Keep text-only startup independent of optional voice imports
+- [x] Fix stale Memories page import after the `db/` persistence migration
+- [x] Align repository validation instructions with the installed Ruff toolchain
+- [x] Enforce approval policy for delegated email, calendar, and messaging mutations
+- [x] Replace callback-only approvals with LangGraph interrupt/checkpointer resume
+- [ ] Add parallel execution when a measured workload requires it (the coordinator is intentionally sequential today)
+- [x] Restore and document optional voice dependencies (`pvporcupine`, `pyaudio`, `pyttsx3`)
+- [ ] Clear remaining `uvx ty check` diagnostics, prioritizing `db/conversation_manager.py`
+
+## Ponytail Simplification (2026-08-14)
+
+- [x] Remove unused document index, nonlocal adapters, legacy callback approvals, and duplicate voice entry point
+- [x] Collapse coordinator dispatch/quality/retry nodes into plan → execute → aggregate
+- [x] Remove unused supervisor tool/middleware wiring and centralise simple subagent response handling
+- [x] Replace manual CLI parsing; preserve the full weather-aware butler greeting system
+- [x] Default the CLI to text mode while keeping `--voice` opt-in
+- [x] Resume pending approval actions from the CLI (`approve` / `reject`)
+- [x] Play named Spotify playlists without falling back to a track search
+- [x] Replace flaky Wikipedia package queries with Wikimedia REST search
+- [x] Consolidate model configuration on provider-neutral `AI_KEY`
+- [x] Run full formatter, type check, and test suite (`310 passed`; `ty` has 37 pre-existing diagnostics)
+
+---
+
+## Coordinator Stability Remediation (2026-05-12)
+
+- [x] Fix dependency-chain execution crash path (invalid `TaskSpec.parallelizable` usage removed)
+- [x] Enforce dependency validity + cycle failure semantics (`DEPENDENCY_FAILED`)
+- [x] Restore callback bridge parity for coordinator subtask execution
+- [x] Map approval denial to `APPROVAL_REJECTED`
+- [x] Enforce task-count, parallel-cap, per-task timeout, and max-runtime coordinator budgets
+- [x] Add strict planner schema validation with one repair pass and fallback
+- [x] Finalize stream completion payload to `agents_used` / `agent_count`
+- [x] Update `ui/Home.py` to consume `agents_used`
+- [x] Add structured per-task telemetry logging (`status`, `error_type`, `latency_ms`)
+- [x] Add coordinator stability regression tests and streaming contract tests
+
+---
+
 ## Phase 1: Foundation Setup
 
 ### Task 1: Project Setup & Config Manager
@@ -103,6 +147,10 @@
 - [x] Implement `get_news()` using NewsAPI
 - [x] Implement `search_web()` tool (DuckDuckGo primary + Google fallback)
 - [x] Implement `wikipedia_search()` tool
+- [x] Replace custom Wikipedia parsing with LangChain `WikipediaQueryRun`
+- [x] Add `wikidata_search()` tool (LangChain Wikidata integration)
+- [x] Add `stackexchange_search()` tool (LangChain StackExchange integration)
+- [x] Add NASA toolkit-backed tools (`nasa_media_search`, `nasa_media_manifest`, `nasa_media_metadata`, `nasa_video_captions`)
 - [x] Implement `read_website()` tool (webpage content extraction)
 - [x] Add Yahoo Finance news tool integration
 - [x] Add YouTube search tool integration
@@ -110,6 +158,7 @@
 - [x] Move `recent_context()` into dedicated module (`core/subagents/info/recent_context.py`)
 - [x] Upgrade `recent_context` to JSON-backed persistent store (TTL, max items, atomic writes, thread lock, auto-path)
 - [x] Add `RecentContextConfig` to config with 5 env-var-backed params
+- [x] Add adaptive fast/deep info routing with per-mode recursion limits and graceful recursion-loop fallback
 - [x] Write 22-test suite for `recent_context` (`tests/test_recent_context.py`)
 - [x] Always include `recent_context` in LLM tool-selector middleware
 - [x] Fix all test suites for middleware mock + updated tool counts (184 passed)
@@ -256,4 +305,4 @@
 
 ---
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-04-06

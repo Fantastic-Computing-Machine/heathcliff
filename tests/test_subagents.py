@@ -3,76 +3,12 @@
 
 import os
 import sys
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
+from langgraph.errors import GraphRecursionError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-# ---------------------------------------------------------------------------
-# Registry: get_all_subagent_tools()
-# ---------------------------------------------------------------------------
-
-
-class TestSubagentRegistry:
-    """Tests for the core/subagents/__init__.py registry."""
-
-    def test_get_all_subagent_tools_returns_list(self):
-        from core.subagents import get_all_subagent_tools
-
-        tools = get_all_subagent_tools()
-        assert isinstance(tools, list)
-
-    def test_get_all_subagent_tools_returns_7_tools(self):
-        from core.subagents import get_all_subagent_tools
-
-        tools = get_all_subagent_tools()
-        assert len(tools) == 7
-
-    def test_all_expected_tools_present(self):
-        from core.subagents import get_all_subagent_tools
-
-        names = {t.name for t in get_all_subagent_tools()}
-        expected = {
-            "info_agent_tool",
-            "music_agent_tool",
-            "email_agent_tool",
-            "calendar_agent_tool",
-            "contacts_agent_tool",
-            "comms_agent_tool",
-            "recent_context",
-        }
-        assert names == expected
-
-    def test_all_tools_have_name(self):
-        from core.subagents import get_all_subagent_tools
-
-        for tool in get_all_subagent_tools():
-            assert hasattr(tool, "name"), f"Tool missing .name: {tool}"
-            assert len(tool.name) > 0
-
-    def test_all_tools_have_description(self):
-        from core.subagents import get_all_subagent_tools
-
-        for tool in get_all_subagent_tools():
-            assert hasattr(tool, "description"), (
-                f"Tool missing .description: {tool.name}"
-            )
-            assert len(tool.description) > 0
-
-    def test_no_duplicate_tool_names(self):
-        from core.subagents import get_all_subagent_tools
-
-        names = [t.name for t in get_all_subagent_tools()]
-        assert len(names) == len(set(names))
-
-    def test_tools_are_langchain_tools(self):
-        """Each tool should be invokable — has .invoke method."""
-        from core.subagents import get_all_subagent_tools
-
-        for tool in get_all_subagent_tools():
-            assert hasattr(tool, "invoke"), f"{tool.name} lacks .invoke()"
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +86,128 @@ class TestToolMetadata:
         from core.subagents.comms.agent import comms_agent_tool
 
         desc = comms_agent_tool.description.lower()
-        assert any(
-            kw in desc for kw in ["telegram", "message", "drive", "notification"]
+        assert any(kw in desc for kw in ["telegram", "message", "notification"])
+
+
+# ---------------------------------------------------------------------------
+# Music device selection and fallback behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestMusicDeviceSelection:
+    def _mock_spotify(self, devices):
+        sp = Mock()
+        sp.search = Mock()
+        sp.devices.return_value = {"devices": devices}
+        sp.start_playback = Mock()
+        return sp
+
+    def test_play_track_prompts_when_device_missing(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [
+                {
+                    "id": "1",
+                    "name": "Office Speaker",
+                    "type": "Speaker",
+                    "is_active": True,
+                }
+            ]
+        )
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        # Search returns a wrong top candidate to exercise the fallback
+        sp.search.return_value = {
+            "tracks": {
+                "items": [
+                    {
+                        "uri": "spotify:track:oops",
+                        "name": "Vanishing Point",
+                        "artists": [{"name": "logical_miracle"}],
+                    }
+                ]
+            }
+        }
+
+        resp = music_tools.play_track.invoke(
+            {"query": "play royals by lorde on my echo dot"}
+        )
+
+        assert "couldn't find a device" in resp.lower()
+        sp.start_playback.assert_not_called()
+
+    def test_play_track_uses_requested_device_when_found(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [{"id": "2", "name": "Echo Dot", "type": "Speaker", "is_active": False}]
+        )
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        sp.search.return_value = {
+            "tracks": {
+                "items": [
+                    {
+                        "uri": "spotify:track:123",
+                        "name": "Royals",
+                        "artists": [{"name": "Lorde"}],
+                    }
+                ]
+            }
+        }
+
+        resp = music_tools.play_track.invoke({"query": "play royals on my echo dot"})
+
+        assert "now playing: royals by lorde" in resp.lower()
+        sp.start_playback.assert_called_once_with(
+            device_id="2", uris=["spotify:track:123"]
+        )
+
+    def test_search_excludes_device_phrase(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [{"id": "2", "name": "Echo Dot", "type": "Speaker", "is_active": False}]
+        )
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        sp.search.return_value = {
+            "tracks": {
+                "items": [
+                    {
+                        "uri": "spotify:track:123",
+                        "name": "Royals",
+                        "artists": [{"name": "Lorde"}],
+                    }
+                ]
+            }
+        }
+
+        music_tools.play_track.invoke({"query": "play royals by lorde on my echo dot"})
+
+        called_query = sp.search.call_args[1]["q"]
+        assert "echo dot" not in called_query.lower()
+
+    def test_play_playlist_uses_playlist_context_not_track_search(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [{"id": "pixel", "name": "Pixel 9 Pro", "is_active": True}]
+        )
+        sp.current_user_playlists.return_value = {
+            "items": [{"name": "Funn", "uri": "spotify:playlist:funn"}]
+        }
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        response = music_tools.play_track.invoke(
+            {"query": "play my Funn playlist on Pixel 9 Pro"}
+        )
+
+        assert response == "Now playing playlist: Funn"
+        sp.search.assert_not_called()
+        sp.start_playback.assert_called_once_with(
+            device_id="pixel", context_uri="spotify:playlist:funn"
         )
 
 
@@ -542,3 +598,122 @@ class TestInfoAgentParamCompat:
         result = info_mod.info_agent_tool.invoke({})
         assert "provide" in result.lower() or "request" in result.lower()
         info_mod._agent = original
+
+
+class TestInfoAgentAdaptiveRouting:
+    """Adaptive fast/deep routing + recursion fallback behavior."""
+
+    def _mk_agent(self, response_text: str):
+        mock_agent = Mock()
+        mock_msg = Mock()
+        mock_msg.content = response_text
+        mock_agent.invoke = Mock(return_value={"messages": [mock_msg]})
+        return mock_agent
+
+    def test_simple_query_routes_to_fast_mode(self):
+        import core.subagents.info.agent as info_mod
+
+        mode, reasons = info_mod._choose_research_mode("what is ytd or Reliance")
+        assert mode == "fast"
+        assert reasons == []
+
+    def test_explicit_analysis_routes_to_deep_mode(self):
+        import core.subagents.info.agent as info_mod
+
+        mode, reasons = info_mod._choose_research_mode(
+            "Analyze Reliance vs TCS YTD and cite sources"
+        )
+        assert mode == "deep"
+        assert reasons
+
+    def test_fast_mode_invokes_with_fast_recursion_limit(self, monkeypatch):
+        import core.subagents.info.agent as info_mod
+
+        original_agent = info_mod._agent
+        original_fast = info_mod._fast_agent
+        original_deep = info_mod._deep_agent
+
+        fast_agent = self._mk_agent("Quick answer")
+
+        info_mod._agent = None
+        info_mod._fast_agent = fast_agent
+        info_mod._deep_agent = None
+
+        monkeypatch.setattr(info_mod, "_choose_research_mode", lambda _: ("fast", []))
+        monkeypatch.setattr(info_mod.Config, "INFO_ADAPTIVE_ROUTING_ENABLED", True)
+        monkeypatch.setattr(info_mod.Config, "INFO_FAST_RECURSION_LIMIT", 9)
+
+        result = info_mod.info_agent_tool.invoke({"request": "quick fact"})
+
+        assert "Quick answer" in result
+        assert fast_agent.invoke.called
+        call_args = fast_agent.invoke.call_args[0]
+        assert call_args[1]["recursion_limit"] == 9
+
+        info_mod._agent = original_agent
+        info_mod._fast_agent = original_fast
+        info_mod._deep_agent = original_deep
+
+    def test_fast_mode_escalates_to_deep_on_recursion(self, monkeypatch):
+        import core.subagents.info.agent as info_mod
+
+        original_agent = info_mod._agent
+        original_fast = info_mod._fast_agent
+        original_deep = info_mod._deep_agent
+
+        fast_agent = Mock()
+        fast_agent.invoke = Mock(side_effect=GraphRecursionError("limit"))
+        deep_agent = self._mk_agent("Deep answer")
+
+        info_mod._agent = None
+        info_mod._fast_agent = fast_agent
+        info_mod._deep_agent = deep_agent
+
+        monkeypatch.setattr(info_mod, "_choose_research_mode", lambda _: ("fast", []))
+        monkeypatch.setattr(info_mod.Config, "INFO_ADAPTIVE_ROUTING_ENABLED", True)
+        monkeypatch.setattr(
+            info_mod.Config, "INFO_FAST_TO_DEEP_ESCALATION_ENABLED", True
+        )
+
+        result = info_mod.info_agent_tool.invoke({"request": "quick fact"})
+
+        assert "Deep answer" in result
+        assert fast_agent.invoke.call_count == 1
+        assert deep_agent.invoke.call_count == 1
+
+        info_mod._agent = original_agent
+        info_mod._fast_agent = original_fast
+        info_mod._deep_agent = original_deep
+
+    def test_deep_recursion_returns_graceful_fallback(self, monkeypatch):
+        import core.subagents.info.agent as info_mod
+
+        original_agent = info_mod._agent
+        original_fast = info_mod._fast_agent
+        original_deep = info_mod._deep_agent
+        original_recent_context = info_mod.recent_context
+
+        deep_agent = Mock()
+        deep_agent.invoke = Mock(side_effect=GraphRecursionError("limit"))
+        mock_recent_context = Mock()
+        mock_recent_context.invoke = Mock(
+            return_value="No recent snippets available. Run a search tool first."
+        )
+
+        info_mod._agent = None
+        info_mod._fast_agent = None
+        info_mod._deep_agent = deep_agent
+        info_mod.recent_context = mock_recent_context
+
+        monkeypatch.setattr(info_mod, "_choose_research_mode", lambda _: ("deep", []))
+        monkeypatch.setattr(info_mod.Config, "INFO_ADAPTIVE_ROUTING_ENABLED", True)
+
+        result = info_mod.info_agent_tool.invoke({"request": "analyze this in depth"})
+
+        assert "research loop" in result.lower()
+        assert "recursion limit" not in result.lower()
+
+        info_mod._agent = original_agent
+        info_mod._fast_agent = original_fast
+        info_mod._deep_agent = original_deep
+        info_mod.recent_context = original_recent_context

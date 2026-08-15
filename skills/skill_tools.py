@@ -10,7 +10,7 @@ from langchain.tools import tool
 from logger import logger
 from skills.master_info import get_skill_content as _master_info_live
 from skills.master_info import update_master_info
-from skills.skills import SKILLS, SKILLS_BY_NAME
+from skills.skills import SKILLS_BY_NAME
 
 
 @tool(

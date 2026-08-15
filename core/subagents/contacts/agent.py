@@ -9,6 +9,7 @@ from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 
 from config import Config
+from core.subagents._runner import run_agent
 from core.subagents.contacts.tools import get_people_tools
 from logger import logger
 
@@ -32,7 +33,7 @@ def _build() -> Any:
     try:
         return create_agent(
             model=init_chat_model(
-                api_key=Config.AI_KEY,
+                api_key=Config.get_ai_api_key(),
                 model=Config.TOOL_MODEL,
                 temperature=0.4,
                 max_tokens=Config.MAX_TOKENS,
@@ -66,37 +67,4 @@ def contacts_agent_tool(request: str) -> str:
         _agent = _build()
     if _agent is None:
         return "Contacts agent is currently unavailable."
-    try:
-        logger.info(f"[contacts_agent] {request[:80]}")
-        result = _agent.invoke({"messages": [{"role": "user", "content": request}]})
-
-        messages = result.get("messages", [])
-        if not messages:
-            return "No response generated."
-
-        last_msg = messages[-1]
-        content = last_msg.content
-        if isinstance(content, list):
-            resp = "".join(
-                part.get("text", "")
-                for part in content
-                if isinstance(part, dict) and part.get("type") == "text"
-            )
-        else:
-            resp = str(content) if content else ""
-
-        resp = resp.strip()
-
-        # Fallback: if AI yielded empty string, use the last tool's output
-        if not resp:
-            for msg in reversed(messages):
-                if getattr(msg, "type", "") == "tool":
-                    resp = str(msg.content)
-                    break
-            if not resp:
-                resp = "Action completed, but no text response was generated."
-
-        return resp
-    except Exception as exc:
-        logger.error(f"[contacts_agent] error: {exc}", exc_info=True)
-        return f"Contacts lookup failed: {exc}"
+    return run_agent(_agent, request, "contacts_agent", "Contacts lookup failed")

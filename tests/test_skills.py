@@ -3,9 +3,6 @@
 
 import os
 import sys
-from unittest.mock import patch
-
-import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -64,26 +61,26 @@ class TestSkillDefinitions:
         from skills.skills import SKILLS
 
         for skill in SKILLS:
-            assert (
-                len(skill["description"].strip()) > 0
-            ), f"{skill['name']} has empty description"
+            assert len(skill["description"].strip()) > 0, (
+                f"{skill['name']} has empty description"
+            )
 
     def test_skill_contents_are_non_empty(self):
         from skills.skills import SKILLS
 
         for skill in SKILLS:
-            assert (
-                len(skill["content"].strip()) > 0
-            ), f"{skill['name']} has empty content"
+            assert len(skill["content"].strip()) > 0, (
+                f"{skill['name']} has empty content"
+            )
 
     def test_descriptions_are_brief(self):
         """Descriptions should be short — they're always in the prompt."""
         from skills.skills import SKILLS
 
         for skill in SKILLS:
-            assert (
-                len(skill["description"]) < 300
-            ), f"{skill['name']} description too long ({len(skill['description'])} chars)"
+            assert len(skill["description"]) < 300, (
+                f"{skill['name']} description too long ({len(skill['description'])} chars)"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +259,7 @@ class TestMasterInfoSkill:
         assert get_master_info()["favorite_season"] == "Autumn"
 
     def test_update_master_info_reports_duplicate(self):
-        from skills.master_info import get_master_info, update_master_info
+        from skills.master_info import update_master_info
 
         # Add once
         update_master_info.invoke({"field": "interests", "value": "Chess"})

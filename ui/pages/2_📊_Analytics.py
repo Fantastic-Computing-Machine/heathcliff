@@ -13,7 +13,7 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from core.memory_manager import MemoryManager
+from db.memory_manager import MemoryManager
 
 st.set_page_config(page_title="Analytics", page_icon="📊", layout="wide")
 
@@ -33,7 +33,7 @@ st.markdown("Insights into your interactions with Heathcliff")
 # Overview metrics
 stats = memory.get_stats()
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
     st.metric(
@@ -45,13 +45,6 @@ with col1:
 with col2:
     st.metric("💬 Chat Messages", stats["chats"], help="Total conversation turns")
 
-with col3:
-    st.metric(
-        "📄 Documents Indexed",
-        stats["documents"],
-        help="Emails, files, and other documents",
-    )
-
 st.markdown("---")
 
 # Two column layout
@@ -61,27 +54,21 @@ col_left, col_right = st.columns(2)
 with col_left:
     st.subheader("🕒 Recent Activity")
 
-    recent_chats = memory.chats.get(limit=20)
+    conversations = memory.get_all_conversations()
+    recent_conversations = sorted(
+        conversations, key=lambda x: x.get("start_time", ""), reverse=True
+    )[:20]
 
-    if recent_chats and recent_chats.get("metadatas"):
-        activity_data = []
-        for doc, meta in zip(recent_chats["documents"], recent_chats["metadatas"]):
-            activity_data.append(
-                {
-                    "Role": meta.get("role", "unknown").capitalize(),
-                    "Message": doc[:50] + ("..." if len(doc) > 50 else ""),
-                    "Session": meta.get("session", "unknown")[:8],
-                    "Time": (
-                        meta.get("timestamp", "unknown")[:19]
-                        if meta.get("timestamp")
-                        else "N/A"
-                    ),
-                }
-            )
-
-        if activity_data:
-            df = pd.DataFrame(activity_data)
-            st.dataframe(df, width="content", hide_index=True)
+    if recent_conversations:
+        activity_data = [
+            {
+                "Conversation": c["conversation_id"][:8],
+                "Messages": c["msg_count"],
+                "Started": c.get("start_time", "")[:19] or "N/A",
+            }
+            for c in recent_conversations
+        ]
+        st.dataframe(pd.DataFrame(activity_data), width="content", hide_index=True)
     else:
         st.info("No recent activity to display")
 
@@ -103,7 +90,6 @@ with col_right:
             ).sort_values("Count", ascending=False)
 
             st.bar_chart(df.set_index("Category"))
-
             st.caption(f"**Total Categories**: {len(categories)}")
         else:
             st.info("No memories categorized yet")
@@ -112,37 +98,34 @@ with col_right:
 
 st.markdown("---")
 
-# Session Analytics
-st.subheader("📈 Session Analytics")
+# Conversation Analytics
+st.subheader("📈 Conversation Analytics")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("**Unique Sessions**")
+    st.markdown("**Unique Conversations**")
 
-    all_chats = memory.chats.get(limit=300)
+    all_conversations = memory.get_all_conversations()
 
-    if all_chats and all_chats.get("metadatas"):
-        sessions = set(
-            meta.get("session", "unknown") for meta in all_chats["metadatas"]
-        )
-        st.metric("Total Sessions", len(sessions))
-
-        st.caption("A session is a continuous conversation period")
+    if all_conversations:
+        st.metric("Total Conversations", len(all_conversations))
+        st.caption("A conversation is a continuous interaction period")
     else:
-        st.info("No session data available")
+        st.info("No conversation data available")
 
 with col2:
     st.markdown("**Message Distribution**")
 
-    if all_chats and all_chats.get("metadatas"):
-        roles = {}
-        for meta in all_chats["metadatas"]:
-            role = meta.get("role", "unknown")
-            roles[role] = roles.get(role, 0) + 1
-
-        role_df = pd.DataFrame(list(roles.items()), columns=["Role", "Messages"])
-
+    if all_conversations:
+        total_msgs = sum(c.get("msg_count", 0) for c in all_conversations)
+        avg_msgs = total_msgs / len(all_conversations) if all_conversations else 0
+        role_df = pd.DataFrame(
+            [
+                {"Metric": "Total messages", "Value": total_msgs},
+                {"Metric": "Avg per conversation", "Value": round(avg_msgs, 1)},
+            ]
+        )
         st.dataframe(role_df, width="content", hide_index=True)
     else:
         st.info("No message data available")

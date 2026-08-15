@@ -10,7 +10,7 @@ import pyaudio
 import pyttsx3
 import speech_recognition as sr
 
-from config import get_config
+from config import Config
 
 
 class AudioHandler:
@@ -29,7 +29,7 @@ class AudioHandler:
             wake_word: Wake word to detect (default: "heathcliff")
             access_key: Porcupine access key (if None, uses free tier)
         """
-        self.config = get_config()
+        self.config = Config
         self.wake_word = wake_word
 
         # Speech Recognition
@@ -52,9 +52,9 @@ class AudioHandler:
 
     def _configure_tts(self):
         """Configure TTS engine with settings from config."""
-        rate = self.config.get("tts.rate", 175)
-        volume = self.config.get("tts.volume", 0.9)
-        voice = self.config.get("tts.voice")
+        rate = self.config.TTS_RATE
+        volume = self.config.TTS_VOLUME
+        voice = self.config.TTS_VOICE
 
         self.tts_engine.setProperty("rate", rate)
         self.tts_engine.setProperty("volume", volume)

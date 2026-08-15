@@ -2,6 +2,68 @@
 
 This file serves as the **working memory** for all coding agents on the Heathcliff project. It tracks discoveries, issues, and recent activity. For complete project documentation, see `AGENTS.md`.
 
+## 2026-08-14 Ponytail Simplification
+
+- Restored `utils/heathcliff_greetings.py` exactly from the supplied pre-deletion source (apart from its CRLF line endings): all time/weather variations, weather commentary, and return-greeting behaviour are preserved.
+- Added `tests/test_greetings.py`; the full suite now passes 302 tests. `uvx ty check` has remaining unrelated project-wide diagnostics.
+- Restored missing runtime dependency declarations for the voice stack (`pvporcupine`, `pyaudio`, `pyttsx3`) and the directly used Google OAuth clients. `uv sync` now installs them; importing the voice stack succeeds.
+- Made text mode the default CLI path: `uv run main.py` no longer initializes or imports audio; `--voice` explicitly enables it. Added CLI/lazy-import regressions and verified a real text-mode startup/quit flow.
+- Added CLI approval resume: after a sensitive action pauses, `approve`/`sure`/`yes` resumes the original checkpointed action, while `reject`/`no`/`cancel` rejects it. The original request is retained for the resume and no second planner invocation occurs.
+- Added Spotify playlist playback: named playlists now resolve against the user's playlists and use Spotify playlist-context playback, never a track search. Spotify requests playlist-read scopes and will prompt once to refresh the cached authorization if needed.
+- Replaced the brittle third-party Wikipedia client with Wikimedia's REST search API. Mount Fuji research now returns live source snippets without the JSON decode traceback; request failures are reported as a concise temporary-unavailable message.
+- Consolidated every model and Mem0 configuration on provider-neutral `AI_KEY` via `Config.get_ai_api_key()`. `GOOGLE_API_KEY` and `GEMINI_API_KEY` remain migration fallbacks, while Custom Search receives only `GOOGLE_CSE_API_KEY` directly and cannot overwrite the AI key.
+- Removed unused document indexing (`DocumentManager`/`my_data`), context store, nonlocal/deep delegation adapters, the duplicate `voice/main.py` entry point, and unused direct Playwright/LangSmith dependencies.
+- Replaced the unused supervisor tool assembly and LangChain middleware stack with a small `DelegationBudget` used directly by the coordinator.
+- Reduced the coordinator to `plan → execute_subtasks → aggregate`; streaming keeps a derived sequential dispatch event. Dependency validation, timeouts, callbacks, and the process-local resumable approval interrupt remain intact.
+- Kept approval as the pure `requires_approval()` policy plus the LangGraph resume UI; removed the obsolete Streamlit callback handler and its session mutation helpers.
+- Collapsed the five simple domain-agent response wrappers into `core/subagents/_runner.py`, simplified CLI parsing, and updated persistence/UI/docs to remove document-index claims.
+- Verification: `uv run ruff check --fix . && uv run ruff format .`, `uv lock`, `uv run pytest tests -v -s` (310 passed), `uv run python main.py --help`, and `git diff --check` all passed. `uvx ty check` reports 37 existing diagnostics concentrated in optional audio dependencies and third-party/LangGraph type narrowing.
+
+## 2026-08-13 Approval Policy and Resumable Actions
+
+- Added a shared `requires_approval(tool_name, tool_input)` policy covering exact sensitive Gmail/Calendar/Telegram tools and mutation intent routed through the outer email, calendar, and communications agents. Read/search/list requests remain unblocked.
+- Replaced the Streamlit callback dead-end with a LangGraph human-in-the-loop flow: the coordinator compiles with `InMemorySaver`, pauses with `interrupt()`, and resumes the same run with `Command(resume=...)` under the same conversation/thread ID.
+- Sensitive tasks are preflighted before the execute node performs any subagent call. This avoids LangGraph node-replay duplicating earlier side effects when the run resumes.
+- Runtime callback objects now travel through LangGraph runtime context rather than checkpointed state, avoiding msgpack serialization failures while preserving callback telemetry and legacy rejection behavior.
+- Streamlit Approve, Modify, and Reject controls call `HeathcliffAgent.resume_approval()`; interrupted turns are saved to conversation memory only after terminal completion.
+- Added `tests/test_approval_handler.py` and `tests/test_approval_resume.py` for mutation/read classification, callback parity, exact-once execution, rejection mapping, no-save-on-pause, and UI resume wiring.
+- Current persistence ceiling: `InMemorySaver` survives Streamlit reruns within the running process but not a process restart. Add a configured SQLite/Postgres checkpointer before claiming restart-durable approvals.
+- Verification: Ruff check/format passed; `uv run pytest tests -v -s` passed all 376 tests. The captured pytest command still fails before collection because its temporary capture file disappears. `uvx ty check` reports 48 existing project-wide diagnostics, including optional voice imports, LangGraph typing, registry tool types, and DB result narrowing.
+
+## 2026-08-02 Repository Audit and Action-Chain Hardening
+
+- Audited the staged coordinator/delegation migration together with the unstaged `db/` persistence migration.
+- Fixed coordinator planning to consume retrieved LangChain conversation messages. Short replies such as an email address can now be interpreted in the context of the prior requested action instead of being routed as isolated new requests.
+- Extended the planner instruction to require explicit dependencies for data-producing chains such as research + contact lookup → email.
+- Added `tests/test_action_execution.py` covering clarification history, research/contact outputs reaching the email task, and awaited Telegram sends.
+- Fixed `send_to_telegram()` to await `python-telegram-bot`'s async `send_message()` before reporting success.
+- Decoupled text-only startup from optional audio imports; fixed `AudioHandler` to use the class-based `Config` API; fixed the Memories page import after `core/memory_manager.py` moved to `db/memory_manager.py`.
+- Updated `AGENTS.md` from removed Black/isort commands to the configured Ruff toolchain.
+- Verification: `uv run pytest tests -v -s` passed 331 tests; Ruff check/format passed; text-mode import and touched-file compilation passed.
+- Resolved 2026-08-13: delegated mutation policy and LangGraph interrupt/resume now pause and resume the original action. Checkpoints remain process-local until a persistent saver is configured.
+- Remaining coordinator issue: tasks marked `parallelizable` are still executed by a sequential loop; `effective_parallel` is calculated but not used for scheduling.
+- Remaining validation issue: `uvx ty check` reports 52 diagnostics, concentrated in optional voice dependencies, LangGraph/registry typing, and new DB result typing.
+- Environment note: pytest's default capture crashed on a missing capture tempfile in this workspace; running with `-s` completed normally.
+
+## 2026-05-13 New Architecture Redesign Draft Started
+
+- Created `docs/new_architecture.md` as the shared draft for redesigning Heathcliff from the ground up.
+- Initial direction: Heathcliff is a personal butler / Jarvis-like top-level orchestrator, not one giant agent with every tool.
+- Drafted hierarchical multi-agent concept: `Heathcliff Agent -> task-specific agents with focused tools`.
+- Added planner-led fan-out with shared state, inspired by ADK multi-agent and parallel-agent workflow patterns.
+- Added controlled handoff concept: specialist agents may emit structured handoff requests, but Heathcliff validates and routes them to avoid unbounded agent-to-agent loops.
+- Current agreement: use LangChain + LangGraph to implement ADK-inspired concepts rather than adopting ADK itself.
+- Added context-management decision: Heathcliff model input should use real LangChain `SystemMessage`, `HumanMessage`, and `AIMessage` objects; never serialize prior chat history into the current `HumanMessage`.
+- Current `HumanMessage` may include current user query, memories, runtime context, active task state, and selected subagent context/results. Full subagent outputs live in shared state and enter prompts through a context builder.
+- Specialist agents should receive focused task packets with strict-but-not-restrictive instructions, relevant context only, allowed tools, and an expected structured output shape.
+- Added DB/module design decision: conversation history should live in a Chroma collection, extracted memories should live in a separate memories collection, and memory extraction should run asynchronously after conversation writes.
+- Proposed DB module split: `base` for connection and generic CRUD/collection lifecycle, `memory_manager` using Mem0 and the memories collection, and `conversation_manager` for storing/retrieving multimodal conversation messages as LangChain `HumanMessage` / `AIMessage` blocks.
+- Added concrete redesign principle: the architecture should be explicitly object-oriented and service-based, using concrete classes, typed data structures, explicit service boundaries, controlled singletons, and caching where it improves runtime behavior.
+- Expanded OOP/service design in `docs/new_architecture.md`: proposed services include `HeathcliffRuntime`, `HeathcliffAgent`, `AgentRegistry`, `ContextBuilder`, `HandoffResolver`, `ApprovalService`, `ConversationManager`, and `MemoryManager`; singleton use is limited to stable resources, while per-turn state remains request-scoped.
+- Reorganized `docs/new_architecture.md` so OOP/service structure is baked into the architecture flow: core direction, runtime shape, multi-agent topology, fan-out/shared state, controlled handoffs, context management, lifecycle/caching, and architecture rules.
+- Cleaned up `docs/new_architecture.md` to remove duplication between context management and DB design: persistence/storage details now live in `Persistence And Memory Services`, while `Context Management` only describes prompt assembly and service boundaries.
+- Added prompting and grounding architecture to `docs/new_architecture.md`: prompts are versioned architecture artifacts under a `prompts/` module with `PromptRegistry`; stable instructions precede dynamic context; Heathcliff prompt focuses on orchestration; specialist prompts focus on narrow execution; factual/actionable responses must be grounded in memories, history, tool outputs, or cited research.
+
 ## How Agents Use This File
 
 - Before starting work: Check this file for ongoing issues, recent discoveries, and previous agent findings
@@ -9,6 +71,32 @@ This file serves as the **working memory** for all coding agents on the Heathcli
 - Reference `AGENTS.md` for project overview, architecture, configuration, and development standards
 - Cost optimization: Reuse previous agent discoveries instead of re-investigating
 - Share API integration workarounds and debugging strategies discovered during work
+
+---
+
+## 2026-05-12 Coordinator Stability Remediation
+
+- Hardened `core/coordinator_graph.py` with strict planner schema validation (`extra="forbid"`) and single repair pass before fallback.
+- Enforced dependency semantics:
+  - out-of-range, forward-ref, self-ref -> task marked `DEPENDENCY_FAILED`
+  - cycle-involved tasks -> `DEPENDENCY_FAILED`
+  - acyclic tasks continue execution.
+- Removed invalid dependent-task `TaskSpec.parallelizable` construction that previously caused dependency-chain crashes.
+- Added coordinator callback bridge around local adapter execution:
+  - `on_tool_start` / `on_tool_end` / `on_tool_error` hooks are called
+  - approval rejection maps to `TaskStatus.APPROVAL_REJECTED` + `ErrorType.APPROVAL_REJECTED`.
+- Enforced coordinator budgets/timeouts from `Config`:
+  - post-plan task-count budget check with truncation
+  - pre-execution parallel cap clamping via `effective_parallel`
+  - per-task timeout -> `TIMEOUT` and continue
+  - total-runtime cutoff -> stop scheduling new work.
+- Kept text-based dependency-context injection but hardened with normalization, control-char stripping, literal code-block wrapping, and 1600-char total cap (evenly split).
+- Updated stream contract and UI:
+  - coordinator stream emits `plan`, `dispatch`, `subtask_complete`, `quality_retry`, `response`, `complete`
+  - completion payload uses `agents_used` + `agent_count` (deduped first-seen order)
+  - `ui/Home.py` now consumes `agents_used` instead of `tools_used`.
+- Added structured per-task telemetry logging fields: `status`, `error_type`, `latency_ms`.
+- Added/rewrote `tests/test_coordinator.py` coverage for dependency chains, invalid deps/cycles, unknown target-agent semantics, timeout/runtime behavior, approval-rejection mapping, planner repair path, and `agents_used` stream semantics.
 
 ---
 
@@ -83,7 +171,7 @@ heathcliff/
 - **Middleware (2026-02-23)**: Framework exists in `core/middleware.py` — `LLMToolSelectorMiddleware`, `ToolCallLimitMiddleware`, `TodoListMiddleware`, and `RobustLLMToolSelectorMiddleware` (alias rewriting for 12+ hallucinated tool names) are active. `always_include=["recent_context"]` ensures recency tool stays available. Tests mock `create_middleware_stack` to avoid `langchain_openai` import dependency.
 - **Middleware Tool Selection (2026-02-23)**: `LLMToolSelectorMiddleware` now sets `always_include=["recent_context"]` so recency snippets remain selectable even when other tools are filtered.
 - **Context Window**: Retrieval now uses pair-aware history (`build_message_history`) with semantic pairs first and recent chronological pairs next.
-- **Info Tooling (2026-02-23)**: `core/subagents/info/tools.py` now includes optional LangChain community wrappers for Yahoo Finance news and YouTube search, plus a `recent_context` tool backed by a **JSON-backed persistent store** (`temp/recent_memory.json`) with configurable TTL (2h), max items (100), atomic writes, thread lock, stale-entry cleanup, corrupt-file recovery, and auto-path setup on module load. Config lives in `RecentContextConfig` (5 env vars) wired into the `Conf` MRO. The tool is also registered at supervisor level via `_assemble_default_tools()` (9 tools total: 6 subagents + recent_context + load_skill + update_master_info).
+- **Info Tooling (2026-04-05)**: `core/subagents/info/tools.py` now uses LangChain wrappers/toolkits for Wikipedia (`WikipediaQueryRun`), Wikidata (`WikidataQueryRun`), StackExchange (`StackExchangeTool`), and NASA (`NasaToolkit` via typed facade tools), while preserving `recent_context` capture across new tools. `search_web()` fallback now routes through the LangChain Wikipedia wrapper instead of manual `wikipedia` package calls.
 
 ### Operational Notes
 
@@ -99,11 +187,55 @@ heathcliff/
 - Voice listener concurrency not fully tested.
 - Gmail/Calendar/Spotify rate limits need backoff/retry logic.
 - PyAudio is platform-dependent — test on target systems early.
-- `pyproject.toml` description is still a placeholder.
 
 ---
 
 ## Timeline (Latest Activity)
+
+- **2026-04-06**: **Info agent adaptive routing + recursion hardening** ✅
+  - Implemented dual-mode routing in `core/subagents/info/agent.py`:
+    - `fast` mode for short factual requests.
+    - `deep` mode for analysis/source-heavy requests.
+  - Added request classifier (`_choose_research_mode`) using explicit deep-intent keywords and structural complexity signals.
+  - Added per-mode recursion budgets via invoke config (`recursion_limit`) to prevent routine queries from hitting deep research limits.
+  - Added optional fast→deep one-time escalation when fast mode hits `GraphRecursionError`.
+  - Added graceful fallback on recursion loops using `recent_context` snippets; raw recursion exception text is no longer returned to users.
+  - Added new config knobs in `config/config.py`:
+    - `INFO_ADAPTIVE_ROUTING_ENABLED`
+    - `INFO_FAST_TO_DEEP_ESCALATION_ENABLED`
+    - `INFO_FAST_RECURSION_LIMIT`
+    - `INFO_DEEP_RECURSION_LIMIT`
+  - Added test coverage in `tests/test_subagents.py` (`TestInfoAgentAdaptiveRouting`) for mode selection, recursion-limit config passing, escalation behavior, and graceful fallback.
+  - Verification run:
+    - `uv run pytest tests/test_subagents.py -v` (52 passed)
+    - `uv run pytest tests/test_agent_integration.py -k "MiddlewareAliasNormalization or PromptRulesNoInnerToolNames" -v` (16 passed)
+
+- **2026-04-05**: **Info agent knowledge-tool refresh (Wikipedia + Wikidata + StackExchange + NASA)** ✅
+  - Replaced custom `wikipedia_search` parsing/disambiguation with LangChain `WikipediaQueryRun` + `WikipediaAPIWrapper` in `core/subagents/info/tools.py`.
+  - Added new info tools: `wikidata_search`, `stackexchange_search`, `nasa_media_search`, `nasa_media_manifest`, `nasa_media_metadata`, `nasa_video_captions`.
+  - Wired NASA through `NasaToolkit.from_nasa_api_wrapper(...)` and mapped toolkit modes to stable snake_case tool functions for better prompting/reliability.
+  - Updated `search_web` final fallback to use the same LangChain Wikipedia wrapper path for consistent behavior.
+  - Expanded middleware alias rewrites in `core/middleware.py` for new info tool names (`wikidata_search`, `stackexchange_search`, `nasa_*`) to route safely to `info_agent_tool` at supervisor level.
+  - Updated info subagent prompt and description in `core/subagents/info/agent.py` to advertise new tools/capabilities.
+  - Added alias regression coverage in `tests/test_agent_integration.py`.
+  - Verification run:
+    - `uv run pytest tests/test_agent_integration.py -v` (56 passed, 2 failed) — failures are pre-existing coordinator-graph mocking behavior in `TestAgentWithMockedMemory::test_full_flow_retrieval_to_output` and `TestToolCallingIntegration::test_tool_request_and_response` (response is a mocked coordinator object, not a string).
+    - `uv run pytest tests/test_agent_integration.py -k "MiddlewareAliasNormalization" -v` (16 passed)
+    - `uv run pytest tests/test_subagents.py -v` (47 passed)
+    - `uv run pytest tests/test_recent_context.py -v` (22 passed)
+    - Manual smoke test script invoked all new tools successfully (Wikipedia, Wikidata, StackExchange, NASA).
+
+- **2026-04-05**: **Spotify device preference + LLM selector** ✅
+  - `play_track` now calls a structured-output LLM (`DeviceSelection`) to pick the target device from available Spotify Connect devices; falls back to default device when ambiguous.
+  - If the requested device name isn't found, responds: "I can play '<track>' by <artist>, but I can't control the specific device it plays on. Shall I play it on the default device?" and does not start playback.
+  - Music agent prompt updated to preserve device preferences and ask before switching to default.
+  - Added tests `TestMusicDeviceSelection` covering missing-device fallback and requested-device match.
+
+- **2026-04-05**: **Spotify playback hardening (deterministic parsing + confidence gate)** ✅
+  - Device parsing is deterministic; LLM parsing is removed from the control path. Device phrases are stripped before Spotify search.
+  - Track search uses cleaned music query and picks the best-scored candidate; if the user specified an artist and confidence is low, it asks before playing.
+  - User-facing response now prefers tool output to avoid hallucinated confirmations.
+  - Tests updated for device fallback, device match, and ensuring device phrases are excluded from search.
 
 - **2026-02-24**: **Prompt optimization Phases 0–4 complete — latency reduction & test suite at 237** ✅
   - **Root cause**: System prompt referenced raw inner tools (`get_weather`, `search_web`) instead of supervisor-level tools (`info_agent_tool`, etc.), causing hallucinated tool calls and ~48s weather queries.

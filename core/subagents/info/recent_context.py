@@ -7,7 +7,7 @@ import json
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from langchain.tools import tool
 from pydantic import BaseModel, ConfigDict, Field

@@ -22,7 +22,7 @@ uv sync  # creates .venv from pyproject.toml / uv.lock
 
 # 4. Configure API keys
 cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY + service keys
+# Edit .env and add your AI_KEY + service keys
 # (Optional) Add LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY
 #          + LANGFUSE_BASE_URL (https://cloud.langfuse.com or us.cloud...) for observability
 
@@ -30,11 +30,11 @@ cp .env.example .env
 # Edit master_info.toml (IMPORTANT/OPTIONAL sections are commented inline)
 # Config reads this file path via MASTER_INFO_LOC in config/config.py
 
-# 5. Run in text mode (no voice hardware needed)
-uv run python main.py --text
-
-# OR run in voice mode
+# 5. Run in text mode (the default; no voice hardware needed)
 uv run python main.py
+
+# Enable voice mode when audio hardware is configured
+uv run python main.py --voice
 
 # OR launch the Streamlit dashboard
 uv run streamlit run ui/Home.py
@@ -80,14 +80,14 @@ uv run streamlit run ui/Home.py
 ### 💻 Interfaces
 
 - Voice mode (`main.py`)
-- Text mode for testing (`main.py --text`)
+- Text mode by default (`main.py`; `--text` remains supported)
 - Streamlit web dashboard (`ui/Home.py`)
 - 3D Blob web UI (`ui/server.py` → `assets/`)
 
 ## Tech Stack
 
 - **LLM Framework**: LangChain + LangGraph with Gemini 3 Flash Preview / Gemini 2.5 Pro
-- **Memory**: Mem0 (long-term) + ChromaDB (chat history, documents)
+- **Memory**: Mem0 (long-term) + ChromaDB (chat history)
 - **Voice**: pvporcupine (wake word), Google STT, espeak TTS
 - **Integrations**: Gmail, Google Calendar, Spotify, Telegram, Google Drive, OpenWeatherMap, NewsAPI
 - **Search**: DuckDuckGo (primary), Google Custom Search (fallback), Wikipedia
@@ -96,12 +96,14 @@ uv run streamlit run ui/Home.py
 
 ## Architecture
 
-Heathcliff uses a **supervisor + subagents** architecture:
+Heathcliff uses a **coordinator + subagents** architecture:
 
-1. **Supervisor Agent** (`HeathcliffAgent`): Singleton orchestrator that receives user input, retrieves context (Mem0 memories + ChromaDB chat history), and delegates to domain-specific subagent tools.
+1. **Coordinator** (`HeathcliffAgent`): Singleton orchestrator that receives user input, retrieves context (Mem0 memories + ChromaDB chat history), then plans, executes, and aggregates domain subagent work.
 2. **Subagents** (`core/subagents/`): Six domain agents — Info, Music, Email, Calendar, Contacts, Comms — each with its own `tools.py` and `agent.py`.
 3. **Skills** (`skills/`): Three dynamic capabilities loaded at runtime — `master_info` (user profile), `british_persona` (voice/tone guide), and `email_safety` (email composition rules).
 4. **Memory Layer**: Pair-based semantic + chronological chat context injected as `HumanMessage`/`AIMessage` pairs; Mem0 recall injected into `USER_PROMPT_TEMPLATE` with XML delimiters.
+
+Coordinator execution now enforces task/runtime budgets and exposes stream completion metadata via `agents_used` and `agent_count` (replacing `tools_used`).
 
 ## Usage Modes
 
@@ -188,8 +190,8 @@ print(response)
 
 # Multi-turn conversation (same session maintains context)
 session_id = "my-session-123"
-response1 = agent.invoke("My name is Alex", session_id=session_id)
-response2 = agent.invoke("What's my name?", session_id=session_id)
+response1 = agent.invoke("My name is Alex", conversation_id=session_id)
+response2 = agent.invoke("What's my name?", conversation_id=session_id)
 # response2 will know your name is Alex
 ```
 
@@ -208,14 +210,11 @@ results = memory.recall("what are user preferences?", n=3)
 print(results["documents"])
 
 # Save chat conversation
-memory.save_chat(
+memory.save_turn(
     user_msg="What's the weather?",
     assistant_msg="It's sunny and 72F",
-    session_id="session-123"
+    conversation_id="session-123"
 )
-
-# Retrieve chat context
-context = memory.get_chat_context("weather", session_id="session-123")
 ```
 
 ## Langfuse Observability

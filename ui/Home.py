@@ -16,14 +16,7 @@ from datetime import datetime
 
 from config import Config
 from core.agent_core import HeathcliffAgent
-from core.approval_handler import (
-    StreamlitApprovalHandler,
-    approve_request,
-    clear_approval,
-    is_approval_pending,
-    reject_request,
-)
-from core.memory_manager import MemoryManager
+from db.memory_manager import MemoryManager
 from logger import logger
 from utils.errors import AgentInitializationError
 from utils.heathcliff_greetings import generate_greeting
@@ -133,7 +126,6 @@ if initialization_success:
     stats = memory.get_stats()
     st.sidebar.metric("Memories", stats["memories"])
     st.sidebar.metric("Conversations", stats["chats"])
-    st.sidebar.metric("Documents", stats["documents"])
 
     st.sidebar.markdown("---")
     st.sidebar.info(f"**Status**: Ready\n\n**Model**: {Config.SUPERVISOR_MODEL}")
@@ -165,16 +157,16 @@ if "session_start_time" not in st.session_state:
 if "greeting_shown" not in st.session_state:
     st.session_state.greeting_shown = False
 
-# Initialize persistent session_id for maintaining conversation context
-if "session_id" not in st.session_state:
+# Initialize persistent conversation_id for maintaining conversation context
+if "conversation_id" not in st.session_state:
     import uuid
 
-    st.session_state.session_id = str(uuid.uuid4())
-    logger.info(f"Created new session: {st.session_state.session_id}")
+    st.session_state.conversation_id = str(uuid.uuid4())
+    logger.info(f"Created new conversation: {st.session_state.conversation_id}")
 
 if "my_greeting" not in st.session_state:
     st.session_state.my_greeting = generate_greeting(
-        user_name=Config.MASTER_INFO.get("name", "User"), include_weather=True
+        user_name=Config.MASTER_INFO.get("name", "User")
     )
 
 session_state = cast(dict[str, Any], st.session_state)
@@ -185,7 +177,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Check for pending approval requests
-if is_approval_pending(session_state):
+if session_state.get("pending_approval", {}).get("status") == "pending":
     approval = session_state["pending_approval"]
     tool_name = approval.get("tool_name", "Unknown Tool")
     tool_input = approval.get("tool_input", "")
@@ -201,10 +193,19 @@ if is_approval_pending(session_state):
 
         with col1:
             if st.button("Approve", key="approve_btn", width="content"):
-                approve_request(session_state)
-                clear_approval(session_state)
-                st.success("Tool execution approved!")
-                st.rerun()
+                if agent is None:
+                    st.error("Agent is not available to resume this action.")
+                else:
+                    response = agent.resume_approval(
+                        conversation_id=approval["session_id"],
+                        user_input=approval["user_input"],
+                        approved=True,
+                    )
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": response}
+                    )
+                    session_state.pop("pending_approval", None)
+                    st.rerun()
 
         with col2:
             if st.button("Modify", key="modify_btn", width="content"):
@@ -212,16 +213,19 @@ if is_approval_pending(session_state):
 
         with col3:
             if st.button("Reject", key="reject_btn", width="content"):
-                reject_request(session_state)
-                clear_approval(session_state)
-                st.error("Tool execution rejected!")
-                rejection_msg = (
-                    f"I won't execute {tool_name} as you rejected the operation."
-                )
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": rejection_msg}
-                )
-                st.rerun()
+                if agent is None:
+                    st.error("Agent is not available to resume this action.")
+                else:
+                    response = agent.resume_approval(
+                        conversation_id=approval["session_id"],
+                        user_input=approval["user_input"],
+                        approved=False,
+                    )
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": response}
+                    )
+                    session_state.pop("pending_approval", None)
+                    st.rerun()
 
     # Show modification form if requested
     if st.session_state.get("show_modify_form"):
@@ -236,11 +240,21 @@ if is_approval_pending(session_state):
             col_submit, col_cancel = st.columns(2)
             with col_submit:
                 if st.form_submit_button("Submit", width="content"):
-                    approve_request(session_state, modified_input=modified_input)
-                    clear_approval(session_state)
-                    st.session_state["show_modify_form"] = False
-                    st.success("Tool execution approved with modifications!")
-                    st.rerun()
+                    if agent is None:
+                        st.error("Agent is not available to resume this action.")
+                    else:
+                        response = agent.resume_approval(
+                            conversation_id=approval["session_id"],
+                            user_input=approval["user_input"],
+                            approved=True,
+                            modified_input=modified_input,
+                        )
+                        st.session_state.messages.append(
+                            {"role": "assistant", "content": response}
+                        )
+                        session_state.pop("pending_approval", None)
+                        st.session_state["show_modify_form"] = False
+                        st.rerun()
 
             with col_cancel:
                 if st.form_submit_button("Cancel", width="content"):
@@ -278,15 +292,13 @@ if chat_input_message := st.chat_input(
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             full_response = ""
+            approval_pending = False
 
             with st.status("Processing request...", expanded=True) as status:
                 try:
-                    approval_handler = StreamlitApprovalHandler(session_state)
-
                     for raw_event in agent.stream_invoke(
                         prompt,
-                        session_id=st.session_state.session_id,
-                        additional_callbacks=[approval_handler],
+                        conversation_id=st.session_state.conversation_id,
                     ):
                         event = cast(dict[str, Any], raw_event)
                         event_data_raw = event.get("data")
@@ -296,15 +308,26 @@ if chat_input_message := st.chat_input(
                             else {}
                         )
 
-                        if event["type"] == "status":
+                        if event["type"] == "plan":
                             status.update(label=event["message"], state="running")
 
-                        elif event["type"] == "tool":
+                        elif event["type"] == "dispatch":
+                            status.update(label=event["message"], state="running")
+
+                        elif event["type"] == "subtask_complete":
                             with status:
-                                st.write(f"Tool: {event['message']}")
-                                if event_data.get("args"):
-                                    with st.expander("Tool Details", expanded=False):
-                                        st.json(event_data)
+                                st.write(event["message"])
+
+                        elif event["type"] == "quality_retry":
+                            status.update(label=event["message"], state="running")
+
+                        elif event["type"] == "approval_required":
+                            approval_pending = True
+                            approval_data = dict(event_data)
+                            approval_data["status"] = "pending"
+                            approval_data["user_input"] = prompt
+                            session_state["pending_approval"] = approval_data
+                            status.update(label="Approval required", state="complete")
 
                         elif event["type"] == "response":
                             status.update(
@@ -315,9 +338,9 @@ if chat_input_message := st.chat_input(
                         elif event["type"] == "complete":
                             status.update(label="Complete", state="complete")
 
-                            tools = event_data.get("tools_used")
-                            if isinstance(tools, list):
-                                st.caption(f"Tools used: {', '.join(tools)}")
+                            agents = event_data.get("agents_used")
+                            if isinstance(agents, list):
+                                st.caption(f"Agents used: {', '.join(agents)}")
 
                         elif event["type"] == "error":
                             status.update(label="Error", state="error")
@@ -331,7 +354,10 @@ if chat_input_message := st.chat_input(
                     st.error(full_response)
 
             # Stream the response with typing effect (only for responses > 100 chars)
-            if full_response:
+            if approval_pending:
+                response_placeholder.info("Waiting for your approval.")
+                st.rerun()
+            elif full_response:
                 if len(full_response) > 100:
                     words = full_response.split()
                     displayed = []
@@ -375,7 +401,7 @@ with st.sidebar:
         st.session_state.greeting_shown = False
         import uuid
 
-        st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.conversation_id = str(uuid.uuid4())
         st.rerun()
 
     if st.button("New Session", width="content"):
@@ -384,7 +410,7 @@ with st.sidebar:
         st.session_state.session_start_time = datetime.now()
         import uuid
 
-        st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.conversation_id = str(uuid.uuid4())
         st.success("New session started!")
         st.rerun()
 

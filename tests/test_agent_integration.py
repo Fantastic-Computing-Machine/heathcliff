@@ -3,7 +3,7 @@
 
 import os
 import sys
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -40,7 +40,7 @@ def _make_mock_memory_manager():
             "distances": [[]],
         }
     )
-    mm.build_message_history = Mock(return_value=[])
+    mm.build_langchain_history = Mock(return_value=[])
     mm.get_recent_chats = Mock(return_value=[])
     mm.get_chat_context = Mock(
         return_value={
@@ -50,24 +50,21 @@ def _make_mock_memory_manager():
             "distances": [[]],
         }
     )
-    mm.save_chat = Mock(return_value=("uid", "aid"))
+    mm.save_turn = Mock(return_value=("uid", "aid"))
     mm.add_memory = Mock(return_value="mem_1")
-    mm.get_stats = Mock(return_value={"memories": 0, "chats": 0, "documents": 0})
+    mm.get_stats = Mock(return_value={"memories": 0, "chats": 0})
     return mm
 
 
 def _make_agent(memory_manager, executor_response="Hello! I'm Heathcliff."):
-    """Build a HeathcliffAgent with mocked LLM / tools / executor."""
+    """Build a HeathcliffAgent with mocked LLM / coordinator."""
     with (
         patch("core.agent_core.init_chat_model"),
-        patch("core.agent_core.create_agent") as mock_ca,
-        patch("core.agent_core.create_middleware_stack", return_value=[]),
+        patch("core.agent_core.build_coordinator_graph") as mock_bcg,
+        patch("core.agent_core.build_default_registry"),
+        patch("core.agent_core.invoke_coordinator", return_value=executor_response),
     ):
-        mock_executor = Mock()
-        mock_executor.invoke = Mock(
-            return_value={"messages": [Mock(content=executor_response)]}
-        )
-        mock_ca.return_value = mock_executor
+        mock_bcg.return_value = Mock()
 
         from core.agent_core import HeathcliffAgent
 
@@ -90,20 +87,20 @@ class TestAgentWithMockedMemory:
 
         assert isinstance(response, str)
         assert len(response) > 0
-        memory_manager.save_chat.assert_called_once()
+        memory_manager.save_turn.assert_called_once()
 
     def test_multi_turn_uses_context(self, memory_manager):
-        """Test that second turn calls build_message_history."""
+        """Test that second turn calls build_langchain_history."""
         agent = _make_agent(
             memory_manager, executor_response="Response to your question."
         )
 
-        session_id = "multi-turn-test"
-        agent.invoke("My name is Alex", session_id=session_id)
-        agent.invoke("What is my name?", session_id=session_id)
+        conversation_id = "multi-turn-test"
+        agent.invoke("My name is Alex", conversation_id=conversation_id)
+        agent.invoke("What is my name?", conversation_id=conversation_id)
 
-        # build_message_history should be called once per invoke
-        assert memory_manager.build_message_history.call_count == 2
+        # build_langchain_history should be called once per invoke
+        assert memory_manager.build_langchain_history.call_count == 2
 
     def test_memories_are_retrieved(self, memory_manager):
         """Test that stored memories are retrieved during invoke."""
@@ -126,16 +123,17 @@ class TestAgentWithMockedMemory:
         """Test that different sessions pass correct session_id."""
         agent = _make_agent(memory_manager, executor_response="Session response")
 
-        agent.invoke("Session A message", session_id="session-a")
-        agent.invoke("Session B message", session_id="session-b")
+        agent.invoke("Session A message", conversation_id="session-a")
+        agent.invoke("Session B message", conversation_id="session-b")
 
-        # Verify build_message_history was called with both session IDs
-        calls = memory_manager.build_message_history.call_args_list
-        session_ids = [
-            c[1].get("session_id", c[0][1] if len(c[0]) > 1 else None) for c in calls
+        # Verify build_langchain_history was called with both conversation IDs
+        calls = memory_manager.build_langchain_history.call_args_list
+        conversation_ids = [
+            c[1].get("conversation_id", c[0][1] if len(c[0]) > 1 else None)
+            for c in calls
         ]
-        assert "session-a" in session_ids
-        assert "session-b" in session_ids
+        assert "session-a" in conversation_ids
+        assert "session-b" in conversation_ids
 
 
 class TestToolCallingIntegration:
@@ -167,16 +165,19 @@ class TestErrorHandlingIntegration:
     def test_llm_failure_graceful_recovery(self, memory_manager):
         """Test graceful recovery when LLM fails."""
         agent = _make_agent(memory_manager)
-        agent.executor.invoke.side_effect = Exception("API timeout")
 
-        response = agent.invoke("Hello")
+        with patch(
+            "core.agent_core.invoke_coordinator",
+            side_effect=Exception("API timeout"),
+        ):
+            response = agent.invoke("Hello")
 
         assert isinstance(response, str)
         assert "error" in response.lower()
 
     def test_memory_failure_continues(self, memory_manager):
         """Test that agent continues if memory retrieval fails."""
-        memory_manager.build_message_history.side_effect = Exception("DB Error")
+        memory_manager.build_langchain_history.side_effect = Exception("DB Error")
 
         agent = _make_agent(memory_manager)
 
@@ -196,146 +197,19 @@ class TestConcurrentSessions:
         """Test multiple sessions can run without interference."""
         agent = _make_agent(memory_manager, executor_response="Response")
 
-        agent.invoke("Session 1 - Turn 1", session_id="s1")
-        agent.invoke("Session 2 - Turn 1", session_id="s2")
-        agent.invoke("Session 1 - Turn 2", session_id="s1")
-        agent.invoke("Session 2 - Turn 2", session_id="s2")
+        agent.invoke("Session 1 - Turn 1", conversation_id="s1")
+        agent.invoke("Session 2 - Turn 1", conversation_id="s2")
+        agent.invoke("Session 1 - Turn 2", conversation_id="s1")
+        agent.invoke("Session 2 - Turn 2", conversation_id="s2")
 
         # save_chat should have been called 4 times
-        assert memory_manager.save_chat.call_count == 4
+        assert memory_manager.save_turn.call_count == 4
 
         # Verify session IDs were passed correctly
-        save_calls = memory_manager.save_chat.call_args_list
+        save_calls = memory_manager.save_turn.call_args_list
         sessions = [c[0][2] for c in save_calls]
         assert sessions.count("s1") == 2
         assert sessions.count("s2") == 2
-
-
-# ---------------------------------------------------------------------------
-# Middleware alias normalization
-# ---------------------------------------------------------------------------
-
-
-class TestMiddlewareAliasNormalization:
-    """RobustLLMToolSelectorMiddleware must rewrite hallucinated tool names."""
-
-    def test_alias_dict_maps_get_weather(self):
-        """get_weather should map to info_agent_tool."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["get_weather"] == "info_agent_tool"
-
-    def test_alias_dict_maps_search_web(self):
-        """search_web should map to info_agent_tool."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["search_web"] == "info_agent_tool"
-
-    def test_alias_dict_maps_play_track(self):
-        """play_track should map to music_agent_tool."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["play_track"] == "music_agent_tool"
-
-    def test_alias_dict_maps_send_email(self):
-        """send_email should map to email_agent_tool."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["send_email"] == "email_agent_tool"
-
-    def test_alias_dict_maps_load_skill_tool(self):
-        """load_skill_tool should map to load_skill."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["load_skill_tool"] == "load_skill"
-
-    def test_alias_dict_maps_skill_loader_tool(self):
-        """skill_loader_tool should map to load_skill."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["skill_loader_tool"] == "load_skill"
-
-    def test_alias_dict_maps_wikipedia_search(self):
-        """wikipedia_search should map to info_agent_tool."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["wikipedia_search"] == "info_agent_tool"
-
-    def test_alias_dict_maps_research_agent_tool(self):
-        """research_agent_tool should map to info_agent_tool."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["research_agent_tool"] == "info_agent_tool"
-
-    def test_alias_dict_maps_pause_playback(self):
-        """pause_playback should map to music_agent_tool."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["pause_playback"] == "music_agent_tool"
-
-    def test_alias_dict_maps_read_emails(self):
-        """read_emails should map to email_agent_tool."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert TOOL_NAME_ALIASES["read_emails"] == "email_agent_tool"
-
-    def test_all_aliases_point_to_valid_supervisor_tools(self):
-        """Every alias target must be one of the 9 real supervisor tools."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        valid_tools = {
-            "info_agent_tool",
-            "music_agent_tool",
-            "email_agent_tool",
-            "calendar_agent_tool",
-            "contacts_agent_tool",
-            "comms_agent_tool",
-            "recent_context",
-            "load_skill",
-            "update_master_info",
-        }
-        for alias, target in TOOL_NAME_ALIASES.items():
-            assert target in valid_tools, (
-                f"Alias {alias!r} → {target!r} is not a valid supervisor tool"
-            )
-
-    def test_middleware_rewrites_hallucinated_name(self):
-        """RobustLLMToolSelectorMiddleware._process_selection_response rewrites aliases."""
-        from core.middleware import RobustLLMToolSelectorMiddleware
-
-        mw = RobustLLMToolSelectorMiddleware.__new__(RobustLLMToolSelectorMiddleware)
-
-        # Simulate the response dict the LLM returns
-        response = {"tools": ["get_weather", "info_agent_tool"]}
-        valid_tool_names = [
-            "info_agent_tool",
-            "music_agent_tool",
-            "load_skill",
-            "recent_context",
-        ]
-
-        # We can't call _process_selection_response directly without the full
-        # parent infrastructure, but we can verify the alias lookup logic
-        # by testing the dict directly.
-        from core.middleware import TOOL_NAME_ALIASES
-
-        rewritten = []
-        for name in response["tools"]:
-            if name in TOOL_NAME_ALIASES:
-                name = TOOL_NAME_ALIASES[name]
-            if name in valid_tool_names:
-                rewritten.append(name)
-
-        assert "info_agent_tool" in rewritten
-        assert "get_weather" not in rewritten
-        # info_agent_tool should appear (original + rewritten alias)
-        assert rewritten.count("info_agent_tool") == 2
-
-    def test_unknown_tool_not_rewritten(self):
-        """A completely unknown tool name should NOT be rewritten — just dropped."""
-        from core.middleware import TOOL_NAME_ALIASES
-
-        assert "totally_fake_tool" not in TOOL_NAME_ALIASES
 
 
 # ---------------------------------------------------------------------------
@@ -415,10 +289,117 @@ class TestPromptRegression:
 
     def test_prompt_contains_routing_examples(self, system_prompt):
         """Prompt must contain positive routing examples showing correct tool usage."""
-        lower = system_prompt.lower()
-        assert "routing guide" in lower or "→" in system_prompt
+        assert "<routing_examples>" in system_prompt
+        assert "Action:" in system_prompt
 
     def test_prompt_uses_positive_framing_only(self, system_prompt):
         """Prompt should not contain negative enforcement markers."""
         assert "❌" not in system_prompt
         assert "NEVER call" not in system_prompt
+
+    # --- XML structure validation (Phase 1 regression) ---
+
+    def test_prompt_has_role_tag(self, system_prompt):
+        """Prompt must have <role> XML section."""
+        assert "<role>" in system_prompt
+        assert "</role>" in system_prompt
+
+    def test_prompt_has_user_profile_tag(self, system_prompt):
+        """Prompt must have <user_profile> XML section."""
+        assert "<user_profile>" in system_prompt
+        assert "</user_profile>" in system_prompt
+
+    def test_prompt_has_tools_tag(self, system_prompt):
+        """Prompt must have <tools> XML section."""
+        assert "<tools>" in system_prompt
+        assert "</tools>" in system_prompt
+
+    def test_prompt_has_routing_examples_tag(self, system_prompt):
+        """Prompt must have <routing_examples> XML section."""
+        assert "<routing_examples>" in system_prompt
+        assert "</routing_examples>" in system_prompt
+
+    def test_prompt_has_execution_rules_tag(self, system_prompt):
+        """Prompt must have <execution_rules> XML section."""
+        assert "<execution_rules>" in system_prompt
+        assert "</execution_rules>" in system_prompt
+
+    def test_prompt_has_response_style_tag(self, system_prompt):
+        """Prompt must have <response_style> XML section."""
+        assert "<response_style>" in system_prompt
+        assert "</response_style>" in system_prompt
+
+    def test_prompt_does_not_mention_google_drive(self, system_prompt):
+        """System prompt should not reference Google Drive (Drive tools are disabled)."""
+        assert "Google Drive" not in system_prompt
+        assert "google drive" not in system_prompt.lower()
+
+
+# ---------------------------------------------------------------------------
+# Tool description consistency (Phase 2 regression)
+# ---------------------------------------------------------------------------
+
+
+class TestToolDescriptionConsistency:
+    """All supervisor-visible tool descriptions follow the standard template."""
+
+    STANDARD_KEYWORDS = ["use for:", "example:"]
+
+    @pytest.mark.parametrize(
+        "tool_import,module_path",
+        [
+            ("info_agent_tool", "core.subagents.info.agent"),
+            ("music_agent_tool", "core.subagents.music.agent"),
+            ("email_agent_tool", "core.subagents.email.agent"),
+            ("calendar_agent_tool", "core.subagents.calendar.agent"),
+            ("contacts_agent_tool", "core.subagents.contacts.agent"),
+            ("comms_agent_tool", "core.subagents.comms.agent"),
+        ],
+    )
+    def test_subagent_tool_follows_template(self, tool_import, module_path):
+        """Each subagent tool description contains 'Use for:' and 'Example:'."""
+        import importlib
+
+        mod = importlib.import_module(module_path)
+        tool_obj = getattr(mod, tool_import)
+        desc = tool_obj.description.lower()
+        for kw in self.STANDARD_KEYWORDS:
+            assert kw in desc, (
+                f"{tool_import} description missing '{kw}'. Got: {tool_obj.description[:100]}"
+            )
+
+    def test_load_skill_follows_template(self):
+        from skills.skill_tools import load_skill
+
+        desc = load_skill.description.lower()
+        assert "use for:" in desc
+        assert "example:" in desc
+
+    def test_update_master_info_follows_template(self):
+        from skills.master_info import update_master_info
+
+        desc = update_master_info.description.lower()
+        assert "use for:" in desc
+        assert "example:" in desc
+
+    def test_recent_context_follows_template(self):
+        from core.subagents.info.recent_context import recent_context
+
+        desc = recent_context.description.lower()
+        assert "use for:" in desc
+
+    def test_comms_description_does_not_mention_drive(self):
+        """comms_agent_tool description should not reference Google Drive."""
+        from core.subagents.comms.agent import comms_agent_tool
+
+        desc = comms_agent_tool.description.lower()
+        assert "drive" not in desc
+
+    def test_email_description_does_not_require_address_for_search(self):
+        """email_agent_tool description should clarify address is only needed for send/draft."""
+        from core.subagents.email.agent import email_agent_tool
+
+        desc = email_agent_tool.description.lower()
+        # Must mention that search/read doesn't need an address
+        assert "search" in desc
+        assert "not required" in desc or "send" in desc

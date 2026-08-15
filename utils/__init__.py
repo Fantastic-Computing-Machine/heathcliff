@@ -2,10 +2,7 @@
 # ABOUTME: Exports shared utility functions and classes
 
 from .google_auth import get_google_credentials
-from .langfuse_client import (
-    get_langfuse_callback_handler,
-    get_langfuse_client,
-)
+from .langfuse_client import get_langfuse_callback_handler, get_langfuse_client
 
 __all__ = [
     "get_google_credentials",

@@ -1,6 +1,6 @@
 import functools
 import time
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Callable, ParamSpec, TypeVar
 
 from logger import logger
 

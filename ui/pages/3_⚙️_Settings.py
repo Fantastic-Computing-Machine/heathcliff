@@ -203,7 +203,6 @@ with tab4:
             """
 - memories (long-term facts)
 - chat_messages (conversations)
-- my_data (documents)
         """,
             language=None,
         )
@@ -236,9 +235,7 @@ with tab4:
     st.subheader("⚠️ Danger Zone")
 
     with st.expander("🗑️ Clear All Data"):
-        st.warning(
-            "This will delete ALL conversations, memories, and indexed documents!"
-        )
+        st.warning("This will delete all conversations and memories!")
         st.warning("This action CANNOT be undone!")
 
         if st.button("I understand, clear everything"):

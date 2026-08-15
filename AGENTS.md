@@ -13,8 +13,8 @@
 
 ## Architecture Snapshot
 
-- Voice layer: `voice/main.py` + `core/audio_handler.py` handle wake word, STT, and TTS.
-- Agent layer: `core/agent_core.py` (singleton supervisor) orchestrates subagents.
+- Voice layer: `core/audio_handler.py` handles wake word, STT, and TTS.
+- Agent layer: `core/agent_core.py` (singleton coordinator) plans and executes subagents.
 - Subagents layer: `core/subagents/` contains domain-specific agents (`info`, `music`, etc.) each with its own `tools.py` and `agent.py`.
 - Skills layer: `skills/` contains dynamic capabilities loaded at runtime.
 
@@ -22,7 +22,7 @@
 
 - `core/` contains subagents, memory, audio handlers, and the singleton supervisor agent.
 - `skills/` contains dynamic skills that extend the agent's capabilities.
-- `config/` holds the singleton `Config` and middleware settings.
+- `config/` holds the singleton `Config` and execution limits.
 - `ui/` and `voice/` encapsulate Streamlit dashboard and wake-word entry points.
 - Mirrors of these modules sit under `tests/` for parity and test organization.
 - `instructions/` owns system prompt templates and anti-redundancy rules for tool calls.
@@ -49,8 +49,8 @@
 
 ## Lint/Format
 
-- Format: `uv run black .`
-- Sort imports: `uv run isort .`
+- Lint and sort imports: `uv run ruff check --fix .`
+- Format: `uv run ruff format .`
 
 ## Tests
 
@@ -62,8 +62,8 @@
 ## Coding Style & Conventions
 
 - Python 3.11+; 4-space indentation; keep functions small and focused.
-- Imports: stdlib first, third-party next, local last; use isort; avoid unused imports.
-- Formatting: black defaults (88-char line length).
+- Imports: stdlib first, third-party next, local last; use Ruff; avoid unused imports.
+- Formatting: Ruff formatter defaults (88-char line length).
 - Types: add type hints for public functions and class APIs; use `Optional[T]`, `list[T]`, `dict[str, T]`.
 - Naming: modules/files snake_case, classes PascalCase, functions verb phrases, constants UPPER_SNAKE.
 - Docstrings: concise Google-style on public entry points; keep internal helpers minimal.
@@ -121,6 +121,14 @@ tool = Tool(
 - Verify API credentials early; failures can be non-obvious in voice mode.
 - Exercise prompts with varied inputs to validate tool selection.
 - Watch for audio device issues (PyAudio is platform-dependent).
+
+## Post-Coding Validation (Required)
+
+After completing coding tasks, run these checks in order:
+
+1. `uv run ruff check --fix . && uv run ruff format .`
+2. `uvx ty check` (type checking)
+3. `uv run pytest tests -v`
 
 ## Configuration & Secrets
 
