@@ -15,6 +15,12 @@ This file serves as the **working memory** for all coding agents on the Heathcli
 - `TOOL_MODEL` defaults to `google_genai:gemini-3.1-flash-lite-preview`, matching the working supervisor default and remaining overrideable through `.env`; this avoids selecting the exhausted `gemini-3-flash-preview` by default.
 - Verification: Ruff and `git diff --check` passed; the full suite passed (317 tests). `uvx ty check` reports the same 34 unrelated existing diagnostics and none from this repair.
 
+## 2026-08-15 Outbound Email Formatting
+
+- Gmail sends had always used an HTML MIME part but inserted the agent's Markdown/plain text directly, so lists and headings rendered as unstyled text; drafts were plain text only.
+- Added the stdlib-only `format_outbound_email()` renderer: headings, ordered/unordered lists, paragraphs, bold/italic Markdown, safe links, and the mandatory Heathcliff disclosure all render as email HTML. Gmail drafts now include both plain-text and HTML alternatives; sends use the same HTML.
+- Verification: Ruff and `git diff --check` passed; all 318 tests passed. `uvx ty check` remains at the same 34 unrelated diagnostics.
+
 ## 2026-08-14 Ponytail Simplification
 
 - Restored `utils/heathcliff_greetings.py` exactly from the supplied pre-deletion source (apart from its CRLF line endings): all time/weather variations, weather commentary, and return-greeting behaviour are preserved.

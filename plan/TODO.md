@@ -57,6 +57,7 @@
 ## Outbound Identity (2026-08-15)
 
 - [x] Add the master-name Heathcliff signature and autonomous-system disclaimer to Gmail drafts, Gmail sends, and Telegram messages
+- [x] Render Gmail drafts and sends as clean HTML (headings, bullets, paragraphs, emphasis, links, and signature)
 
 ---
 

@@ -1,6 +1,7 @@
 import base64
 from email import message_from_bytes
 from email.message import Message
+from typing import Any, cast
 from unittest.mock import Mock
 
 from config import Config
@@ -9,7 +10,7 @@ from core.subagents.email.tools import (
     SignedGmailCreateDraft,
     SignedGmailSendMessage,
 )
-from utils.outbound_signature import append_outbound_signature
+from utils.outbound_signature import append_outbound_signature, format_outbound_email
 
 
 def test_plain_signature_uses_master_name_once(monkeypatch):
@@ -33,7 +34,8 @@ def test_gmail_drafts_and_sends_include_signature(monkeypatch):
     )._prepare_draft_message("Hello", ["to@example.com"], "Subject")
     draft_raw = draft["message"]["raw"]
     draft_message = message_from_bytes(base64.urlsafe_b64decode(draft_raw))
-    assert "Heathcliff o.b.o Ada Lovelace" in draft_message.get_payload()
+    draft_html = str(cast(Any, draft_message).get_payload()[-1].get_payload())
+    assert "Heathcliff o.b.o Ada Lovelace" in draft_html
 
     sent = SignedGmailSendMessage.model_construct(
         api_resource=api_resource
@@ -46,6 +48,20 @@ def test_gmail_drafts_and_sends_include_signature(monkeypatch):
     assert isinstance(html_body, str)
     assert "Heathcliff o.b.o Ada Lovelace" in html_body
     assert "This is sent by Heathcliff an Autonomous Intelligence system." in html_body
+
+
+def test_email_html_renders_headings_bullets_and_safe_text(monkeypatch):
+    monkeypatch.setattr(Config, "MASTER_INFO", {"name": "Ada Lovelace"})
+
+    rendered = format_outbound_email(
+        "## Korea trip\n\n- **Flights**: Seoul\n- Hotels\n\nVisit https://example.com/?a=1&b=2"
+    )
+
+    assert "<h3>Korea trip</h3>" in rendered
+    assert "<ul>" in rendered
+    assert "<li><strong>Flights</strong>: Seoul</li>" in rendered
+    assert '<a href="https://example.com/?a=1&amp;b=2">' in rendered
+    assert "Heathcliff o.b.o Ada Lovelace" in rendered
 
 
 def test_gmail_search_accepts_full_payload_without_raw():

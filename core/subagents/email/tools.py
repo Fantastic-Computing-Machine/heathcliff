@@ -1,7 +1,8 @@
 # ABOUTME: Gmail integration via LangChain Gmail toolkit
 # ABOUTME: Provides search, read, draft tools using Google OAuth credentials
 
-from base64 import urlsafe_b64decode
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from email.message import EmailMessage
 from typing import Any, Dict, List, cast
 
 from googleapiclient.discovery import build
@@ -11,7 +12,7 @@ from langchain_community.tools.gmail.search import GmailSearch, clean_email_body
 from langchain_community.tools.gmail.send_message import GmailSendMessage
 
 from utils.google_auth import GMAIL_SCOPES, get_google_credentials
-from utils.outbound_signature import append_outbound_signature
+from utils.outbound_signature import append_outbound_signature, format_outbound_email
 
 
 def _get_gmail_service():
@@ -27,9 +28,18 @@ class SignedGmailCreateDraft(GmailCreateDraft):
     """Create drafts with Heathcliff's mandatory sender disclosure."""
 
     def _prepare_draft_message(self, message, to, subject, cc=None, bcc=None):
-        return super()._prepare_draft_message(
-            append_outbound_signature(message), to, subject, cc, bcc
-        )
+        draft_message = EmailMessage()
+        draft_message.set_content(append_outbound_signature(message))
+        draft_message.add_alternative(format_outbound_email(message), subtype="html")
+        draft_message["To"] = ", ".join(to)
+        draft_message["Subject"] = subject
+        if cc is not None:
+            draft_message["Cc"] = ", ".join(cc)
+        if bcc is not None:
+            draft_message["Bcc"] = ", ".join(bcc)
+        return {
+            "message": {"raw": urlsafe_b64encode(draft_message.as_bytes()).decode()}
+        }
 
 
 class SignedGmailSendMessage(GmailSendMessage):
@@ -37,7 +47,7 @@ class SignedGmailSendMessage(GmailSendMessage):
 
     def _prepare_message(self, message, to, subject, cc=None, bcc=None):
         return super()._prepare_message(
-            append_outbound_signature(message, html=True), to, subject, cc, bcc
+            format_outbound_email(message), to, subject, cc, bcc
         )
 
 
