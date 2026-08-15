@@ -11,7 +11,7 @@ from logger import logger
 
 load_dotenv(".env")
 
-MASTER_INFO_LOC = "master_info.toml"
+MASTER_INFO_LOC = ".data/master_info.toml"
 
 
 def _ai_api_key() -> Optional[str]:
@@ -37,7 +37,7 @@ class MasterConf:
             sys.exit(1)
         except tomllib.TOMLDecodeError as exc:
             logger.error(
-                f"Master info file contains invalid TOML ({MASTER_INFO_LOC}): {exc}"
+                f"Master info file appears to be corrupted at ({MASTER_INFO_LOC}): {exc}"
             )
             sys.exit(1)
 
@@ -91,6 +91,8 @@ class PlatformConf:
     # Google Search
     GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
     GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
+    # Tavily's agent-oriented web search and extraction API.
+    TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
     @classmethod
     def get_ai_api_key(cls) -> str:
@@ -205,15 +207,7 @@ class WeatherConfig:
 
 
 class InfoAgentConfig:
-    # Adaptive routing + recursion controls for info subagent
-    INFO_ADAPTIVE_ROUTING_ENABLED = (
-        os.getenv("INFO_ADAPTIVE_ROUTING_ENABLED", "true").lower() == "true"
-    )
-    INFO_FAST_TO_DEEP_ESCALATION_ENABLED = (
-        os.getenv("INFO_FAST_TO_DEEP_ESCALATION_ENABLED", "true").lower() == "true"
-    )
-    INFO_FAST_RECURSION_LIMIT = int(os.getenv("INFO_FAST_RECURSION_LIMIT", "12"))
-    INFO_DEEP_RECURSION_LIMIT = int(os.getenv("INFO_DEEP_RECURSION_LIMIT", "45"))
+    INFO_RECURSION_LIMIT = int(os.getenv("INFO_RECURSION_LIMIT", "45"))
 
 
 class RecentContextConfig:

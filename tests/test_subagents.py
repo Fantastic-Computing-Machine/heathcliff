@@ -600,8 +600,8 @@ class TestInfoAgentParamCompat:
         info_mod._agent = original
 
 
-class TestInfoAgentAdaptiveRouting:
-    """Adaptive fast/deep routing + recursion fallback behavior."""
+class TestInfoAgentExecution:
+    """One semantically-directed info agent with bounded execution."""
 
     def _mk_agent(self, response_text: str):
         mock_agent = Mock()
@@ -610,87 +610,45 @@ class TestInfoAgentAdaptiveRouting:
         mock_agent.invoke = Mock(return_value={"messages": [mock_msg]})
         return mock_agent
 
-    def test_simple_query_routes_to_fast_mode(self):
+    def test_prompt_requires_semantic_source_judgment(self):
         import core.subagents.info.agent as info_mod
 
-        mode, reasons = info_mod._choose_research_mode("what is ytd or Reliance")
-        assert mode == "fast"
-        assert reasons == []
+        prompt = info_mod._BASE_PROMPT.lower()
 
-    def test_explicit_analysis_routes_to_deep_mode(self):
-        import core.subagents.info.agent as info_mod
+        assert "meaning of the user's request" in prompt
+        assert "not from\nword matching" in prompt
+        assert "two substantive\nnon-wikipedia pages" in prompt
+        assert "tavily_search" in prompt
+        assert "tavily_extract" in prompt
 
-        mode, reasons = info_mod._choose_research_mode(
-            "Analyze Reliance vs TCS YTD and cite sources"
-        )
-        assert mode == "deep"
-        assert reasons
+    def test_info_agent_exposes_all_relevant_sources(self):
+        from core.subagents.info.tools import get_info_tools
 
-    def test_fast_mode_invokes_with_fast_recursion_limit(self, monkeypatch):
+        tool_names = {tool.name for tool in get_info_tools()}
+
+        assert {"search_web", "read_website", "wikipedia_search"} <= tool_names
+
+    def test_info_agent_uses_fixed_recursion_limit(self, monkeypatch):
         import core.subagents.info.agent as info_mod
 
         original_agent = info_mod._agent
-        original_fast = info_mod._fast_agent
-        original_deep = info_mod._deep_agent
+        agent = self._mk_agent("Answer")
 
-        fast_agent = self._mk_agent("Quick answer")
-
-        info_mod._agent = None
-        info_mod._fast_agent = fast_agent
-        info_mod._deep_agent = None
-
-        monkeypatch.setattr(info_mod, "_choose_research_mode", lambda _: ("fast", []))
-        monkeypatch.setattr(info_mod.Config, "INFO_ADAPTIVE_ROUTING_ENABLED", True)
-        monkeypatch.setattr(info_mod.Config, "INFO_FAST_RECURSION_LIMIT", 9)
+        info_mod._agent = agent
+        monkeypatch.setattr(info_mod.Config, "INFO_RECURSION_LIMIT", 30)
 
         result = info_mod.info_agent_tool.invoke({"request": "quick fact"})
 
-        assert "Quick answer" in result
-        assert fast_agent.invoke.called
-        call_args = fast_agent.invoke.call_args[0]
-        assert call_args[1]["recursion_limit"] == 9
+        assert "Answer" in result
+        call_args = agent.invoke.call_args[0]
+        assert call_args[1]["recursion_limit"] == 30
 
         info_mod._agent = original_agent
-        info_mod._fast_agent = original_fast
-        info_mod._deep_agent = original_deep
 
-    def test_fast_mode_escalates_to_deep_on_recursion(self, monkeypatch):
+    def test_recursion_returns_graceful_fallback(self):
         import core.subagents.info.agent as info_mod
 
         original_agent = info_mod._agent
-        original_fast = info_mod._fast_agent
-        original_deep = info_mod._deep_agent
-
-        fast_agent = Mock()
-        fast_agent.invoke = Mock(side_effect=GraphRecursionError("limit"))
-        deep_agent = self._mk_agent("Deep answer")
-
-        info_mod._agent = None
-        info_mod._fast_agent = fast_agent
-        info_mod._deep_agent = deep_agent
-
-        monkeypatch.setattr(info_mod, "_choose_research_mode", lambda _: ("fast", []))
-        monkeypatch.setattr(info_mod.Config, "INFO_ADAPTIVE_ROUTING_ENABLED", True)
-        monkeypatch.setattr(
-            info_mod.Config, "INFO_FAST_TO_DEEP_ESCALATION_ENABLED", True
-        )
-
-        result = info_mod.info_agent_tool.invoke({"request": "quick fact"})
-
-        assert "Deep answer" in result
-        assert fast_agent.invoke.call_count == 1
-        assert deep_agent.invoke.call_count == 1
-
-        info_mod._agent = original_agent
-        info_mod._fast_agent = original_fast
-        info_mod._deep_agent = original_deep
-
-    def test_deep_recursion_returns_graceful_fallback(self, monkeypatch):
-        import core.subagents.info.agent as info_mod
-
-        original_agent = info_mod._agent
-        original_fast = info_mod._fast_agent
-        original_deep = info_mod._deep_agent
         original_recent_context = info_mod.recent_context
 
         deep_agent = Mock()
@@ -701,12 +659,8 @@ class TestInfoAgentAdaptiveRouting:
         )
 
         info_mod._agent = None
-        info_mod._fast_agent = None
-        info_mod._deep_agent = deep_agent
+        info_mod._agent = deep_agent
         info_mod.recent_context = mock_recent_context
-
-        monkeypatch.setattr(info_mod, "_choose_research_mode", lambda _: ("deep", []))
-        monkeypatch.setattr(info_mod.Config, "INFO_ADAPTIVE_ROUTING_ENABLED", True)
 
         result = info_mod.info_agent_tool.invoke({"request": "analyze this in depth"})
 
@@ -714,6 +668,4 @@ class TestInfoAgentAdaptiveRouting:
         assert "recursion limit" not in result.lower()
 
         info_mod._agent = original_agent
-        info_mod._fast_agent = original_fast
-        info_mod._deep_agent = original_deep
         info_mod.recent_context = original_recent_context

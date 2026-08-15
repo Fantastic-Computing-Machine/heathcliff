@@ -1,5 +1,5 @@
 # ABOUTME: Capability registry mapping agent names to descriptors with invoke functions
-# ABOUTME: Resolves goals to agent routes based on registered capabilities
+# ABOUTME: Supplies registered agent metadata to the LLM planner
 
 from __future__ import annotations
 
@@ -20,14 +20,9 @@ class AgentDescriptor:
     timeout_ms: int = 60000
     sensitive_actions: List[str] = field(default_factory=list)
 
-    def matches_goal(self, goal: str) -> bool:
-        """Check if any capability keyword appears in the goal."""
-        goal_lower = goal.lower()
-        return any(cap.lower() in goal_lower for cap in self.capabilities)
-
 
 class CapabilityRegistry:
-    """Registry of agent descriptors resolved by capability matching."""
+    """Registry of agent descriptors supplied to the LLM planner."""
 
     def __init__(self) -> None:
         self._agents: Dict[str, AgentDescriptor] = {}
@@ -44,11 +39,6 @@ class CapabilityRegistry:
     def get(self, name: str) -> Optional[AgentDescriptor]:
         """Get a descriptor by agent name."""
         return self._agents.get(name)
-
-    def resolve(self, goal: str) -> List[AgentDescriptor]:
-        """Find agents whose capabilities match the goal."""
-        matches = [d for d in self._agents.values() if d.matches_goal(goal)]
-        return matches
 
     def all_agents(self) -> List[AgentDescriptor]:
         """Return all registered agent descriptors."""

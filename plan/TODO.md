@@ -54,10 +54,22 @@
 - [ ] Complete Spotify's interactive OAuth refresh before headless/live playback checks
 - [ ] Rerun the full JSONL suite after Gemini free-tier quota resets; include rejection-only draft and calendar approval cases
 
+## Research Quality (2026-08-15)
+
+- [x] Remove all keyword/phrase-based research routing; one semantic info agent decides depth from the request
+- [x] Keep source-driven research standards without hiding tools based on hard-coded triggers
+- [x] Add optional Tavily search and extraction through the official LangChain integration
+
+## Semantic Decisions (2026-08-15)
+
+- [x] Remove keyword capability matching from planner fallback routing
+- [x] Replace delegated-action approval regexes with exact tool/agent identity policy
+
 ## Outbound Identity (2026-08-15)
 
 - [x] Add the master-name Heathcliff signature and autonomous-system disclaimer to Gmail drafts, Gmail sends, and Telegram messages
 - [x] Render Gmail drafts and sends as clean HTML (headings, bullets, paragraphs, emphasis, links, and signature)
+- [x] Apply Heathcliff's navy-and-gold branded card layout to all outgoing Gmail drafts and sends
 
 ---
 

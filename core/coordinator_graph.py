@@ -149,8 +149,14 @@ def _fallback_single_task(
     user_input: str, session_id: str, registry: CapabilityRegistry
 ) -> List[Dict[str, Any]]:
     """Fallback path when planning fails entirely."""
-    matches = registry.resolve(user_input)
-    target = matches[0].name if matches else "info_agent_tool"
+    agent_names = registry.agent_names()
+    target = (
+        "info_agent_tool"
+        if registry.get("info_agent_tool")
+        else agent_names[0]
+        if agent_names
+        else "info_agent_tool"
+    )
     spec = TaskSpec(
         goal=user_input,
         target_agent=target,

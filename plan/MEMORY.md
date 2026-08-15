@@ -20,6 +20,16 @@ This file serves as the **working memory** for all coding agents on the Heathcli
 - Gmail sends had always used an HTML MIME part but inserted the agent's Markdown/plain text directly, so lists and headings rendered as unstyled text; drafts were plain text only.
 - Added the stdlib-only `format_outbound_email()` renderer: headings, ordered/unordered lists, paragraphs, bold/italic Markdown, safe links, and the mandatory Heathcliff disclosure all render as email HTML. Gmail drafts now include both plain-text and HTML alternatives; sends use the same HTML.
 - Verification: Ruff and `git diff --check` passed; all 318 tests passed. `uvx ty check` remains at the same 34 unrelated diagnostics.
+- Upgraded the email HTML into a branded, responsive Heathcliff card: navy header, gold monogram/accent, white content panel, restrained disclosure footer, and email-client-safe table/inline styling. No images or external assets are needed, and plain-text MIME alternatives remain available.
+
+## 2026-08-15 Research Quality
+
+- The adaptive fast/deep keyword classifier was removed at the user's request. The info specialist is now a single agent that chooses answer depth semantically from the whole request, while the prompt defines the source-driven standard for substantial answers. All information tools remain available; no words or phrases change the tool set.
+- Removed `AgentDescriptor.matches_goal()` and capability-keyword fallback routing. If LLM planning fails, Heathcliff uses the general information agent rather than guessing from text overlap.
+- Removed all delegated email/calendar/comms approval regexes. The approval policy now uses exact known tool identities and conservatively pauses every mutation-capable delegated agent regardless of the request text; this preserves safety without phrase matching.
+- Verification: Ruff, formatting, and `git diff --check` passed; all 312 tests passed. `uvx ty check` remains at the same 34 unrelated diagnostics.
+- Added the official `langchain-tavily` integration. When `TAVILY_API_KEY` is configured, the info agent receives Tavily's `tavily_search` and `tavily_extract` tools, alongside its existing free public sources. Search is deliberately limited to Tavily: the other LangChain-listed free-tier web-search vendors need separate accounts/keys and duplicate Tavily's purpose. The key is not configured in this checkout yet.
+- Verification: `uv lock`/`uv sync` installed `langchain-tavily==0.2.17`; Ruff, formatting, and `git diff --check` passed; all 314 tests passed. `uvx ty check` remains at the same 34 unrelated diagnostics.
 
 ## 2026-08-14 Ponytail Simplification
 

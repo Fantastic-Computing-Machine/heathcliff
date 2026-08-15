@@ -178,3 +178,4 @@ uv.lock
 temp/
 artifacts/
 .ruff_cache
+.data

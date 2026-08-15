@@ -1,4 +1,4 @@
-# ABOUTME: Information retrieval tools for weather, news, web search, Wikipedia, Wikidata, StackExchange, and NASA
+# ABOUTME: Information retrieval tools for weather, news, web search, Tavily, Wikipedia, Wikidata, StackExchange, and NASA
 # ABOUTME: Integrates LangChain community wrappers/toolkits with recent-context capture
 
 from __future__ import annotations
@@ -444,7 +444,9 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
 @tool
 def wikipedia_search(query: str) -> str:
     """
-    Search Wikipedia for information. Use this for factual queries.
+    Search Wikipedia for background context on factual queries. Do not use it
+    as the only source for a research report; use search_web and read_website
+    for independent sources first.
 
     Args:
         query: Wikipedia search query
@@ -749,6 +751,23 @@ def yt_search_tool() -> List[Any]:
         return []
 
 
+def tavily_tools() -> List[Any]:
+    """Return Tavily search and extraction tools when configured."""
+    if not Config.TAVILY_API_KEY:
+        return []
+
+    try:
+        from langchain_tavily import TavilyExtract, TavilySearch
+
+        return [
+            TavilySearch(max_results=5, topic="general"),
+            TavilyExtract(extract_depth="basic"),
+        ]
+    except Exception as exc:
+        logger.warning("Tavily tools unavailable: %s", exc)
+        return []
+
+
 def get_info_tools() -> List[Any]:
     """
     Get all info tools as a list for agent registration.
@@ -772,4 +791,5 @@ def get_info_tools() -> List[Any]:
     ]
     tools.extend(finance_news_tool())
     tools.extend(yt_search_tool())
+    tools.extend(tavily_tools())
     return tools

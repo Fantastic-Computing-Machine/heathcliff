@@ -1,5 +1,5 @@
 # ABOUTME: Approval-policy regressions for direct tools and delegated subagents
-# ABOUTME: Ensures mutations pause while read-only requests continue without approval
+# ABOUTME: Uses exact tool and agent identities, never natural-language keyword matching
 
 import pytest
 
@@ -43,7 +43,9 @@ def test_exact_sensitive_inner_tools_require_approval(tool_name):
         ("comms_agent_tool", "Forward this on Telegram"),
     ],
 )
-def test_delegated_mutations_require_approval(tool_name, tool_input):
+def test_delegated_agents_require_approval_independent_of_request_text(
+    tool_name, tool_input
+):
     assert requires_approval(tool_name, tool_input)
 
 
@@ -66,8 +68,12 @@ def test_delegated_mutations_require_approval(tool_name, tool_input):
         ("info_agent_tool", "Search the web for calendar apps"),
     ],
 )
-def test_read_only_delegated_requests_do_not_require_approval(tool_name, tool_input):
-    assert not requires_approval(tool_name, tool_input)
+def test_mutation_capable_delegated_agents_require_approval_for_reads_too(
+    tool_name, tool_input
+):
+    assert requires_approval(tool_name, tool_input) == (
+        tool_name in {"email_agent_tool", "calendar_agent_tool", "comms_agent_tool"}
+    )
 
 
 def test_sensitive_tool_names_are_exact():

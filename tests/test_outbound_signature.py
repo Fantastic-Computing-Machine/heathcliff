@@ -57,11 +57,14 @@ def test_email_html_renders_headings_bullets_and_safe_text(monkeypatch):
         "## Korea trip\n\n- **Flights**: Seoul\n- Hotels\n\nVisit https://example.com/?a=1&b=2"
     )
 
+    assert 'class="heathcliff-card"' in rendered
+    assert "background:#121d31" in rendered
     assert "<h3>Korea trip</h3>" in rendered
     assert "<ul>" in rendered
     assert "<li><strong>Flights</strong>: Seoul</li>" in rendered
     assert '<a href="https://example.com/?a=1&amp;b=2">' in rendered
     assert "Heathcliff o.b.o Ada Lovelace" in rendered
+    assert "This is sent by Heathcliff an Autonomous Intelligence system." in rendered
 
 
 def test_gmail_search_accepts_full_payload_without_raw():

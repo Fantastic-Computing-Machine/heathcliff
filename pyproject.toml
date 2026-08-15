@@ -16,6 +16,7 @@ dependencies = [
     "langchain-core>=1.2.5",
     "langchain-google-community>=3.0.2",
     "langchain-google-genai>=4.1.2",
+    "langchain-tavily",
     "langfuse>=3.11.2",
     "langgraph>=1.0.5",
     "mediawikiapi>=1.3",

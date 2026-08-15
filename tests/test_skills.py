@@ -189,19 +189,19 @@ class TestMasterInfoSkill:
         mi_mod._ACTIVE.update(copy.deepcopy(mi_mod._load_seed()))
 
     def test_initial_seed_has_name(self):
-        from skills.master_info import get_master_info
+        from skills.master_info import _load_seed, get_master_info
 
         info = get_master_info()
         assert "name" in info
-        assert info["name"] == "User"
+        assert info["name"] == _load_seed()["name"]
 
     def test_get_master_info_returns_snapshot(self):
         """get_master_info() returns a copy — mutating it doesn't affect _ACTIVE."""
-        from skills.master_info import _ACTIVE, get_master_info
+        from skills.master_info import _ACTIVE, _load_seed, get_master_info
 
         snapshot = get_master_info()
         snapshot["name"] = "Mutated"
-        assert _ACTIVE["name"] == "User"
+        assert _ACTIVE["name"] == _load_seed()["name"]
 
     def test_set_master_info_field_updates_string(self):
         from skills.master_info import get_master_info, set_master_info_field

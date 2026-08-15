@@ -2,7 +2,7 @@
 # ABOUTME: Keeps research independent from the brittle wikipedia package client
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from core.subagents.info import tools
 
@@ -42,3 +42,25 @@ def test_google_search_uses_its_own_credentials(monkeypatch):
     )
 
     assert captured == {"google_api_key": "search-key", "google_cse_id": "search-id"}
+
+
+def test_tavily_tools_are_opt_in(monkeypatch):
+    monkeypatch.setattr(tools.Config, "TAVILY_API_KEY", None)
+
+    assert tools.tavily_tools() == []
+
+
+def test_tavily_tools_use_official_langchain_integration(monkeypatch):
+    monkeypatch.setattr(tools.Config, "TAVILY_API_KEY", "tvly-test")
+    search, extract = Mock(name="search"), Mock(name="extract")
+
+    with patch.dict(
+        "sys.modules",
+        {
+            "langchain_tavily": SimpleNamespace(
+                TavilySearch=lambda **kwargs: search,
+                TavilyExtract=lambda **kwargs: extract,
+            )
+        },
+    ):
+        assert tools.tavily_tools() == [search, extract]

@@ -1,7 +1,5 @@
 # ABOUTME: Pure policy for deciding whether an action needs user approval.
 
-import re
-
 SENSITIVE_TOOLS = {
     "send_email",
     "GmailSendMessage",
@@ -21,32 +19,10 @@ SENSITIVE_TOOLS = {
     "send_to_telegram",
 }
 
-_ACTION_PREFIX = r"(?:^|[\"':]\s*|\b(?:please|kindly|can you|could you|would you)\s+)"
-
-_DELEGATED_MUTATION_PATTERNS = {
-    "email_agent_tool": re.compile(
-        r"\b(send|compose|write|reply|respond|forward)\b"
-        rf"|{_ACTION_PREFIX}(?:draft|email)\b"
-        r"|\bcreate\s+(?:an?\s+)?draft\b",
-        re.IGNORECASE,
-    ),
-    "calendar_agent_tool": re.compile(
-        r"\b(create|add|book|update|edit|change|reschedule|move|delete|remove|cancel)\b"
-        r"|\bset\s+up\b"
-        rf"|{_ACTION_PREFIX}(?:schedule|invite)\b",
-        re.IGNORECASE,
-    ),
-    "comms_agent_tool": re.compile(
-        r"\b(send|notify|post|publish|reply|forward|share)\b"
-        rf"|{_ACTION_PREFIX}(?:tell|message|text)\b",
-        re.IGNORECASE,
-    ),
-}
+SENSITIVE_AGENTS = {"email_agent_tool", "calendar_agent_tool", "comms_agent_tool"}
 
 
 def requires_approval(tool_name: str, tool_input: str = "") -> bool:
-    """Return whether a direct or delegated tool call may mutate external state."""
-    if tool_name in SENSITIVE_TOOLS:
-        return True
-    pattern = _DELEGATED_MUTATION_PATTERNS.get(tool_name)
-    return bool(pattern and pattern.search(tool_input or ""))
+    """Approve exact mutation tools and all mutation-capable delegated agents."""
+    del tool_input
+    return tool_name in SENSITIVE_TOOLS or tool_name in SENSITIVE_AGENTS

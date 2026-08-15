@@ -1,9 +1,8 @@
 # ABOUTME: Info / research sub-agent — web search, weather, news, Wikipedia
 # ABOUTME: Wraps tools/info_tools.py; exposed to supervisor as a single @tool
 
-import re
 from datetime import datetime
-from typing import Any, Tuple
+from typing import Any
 
 import pytz
 from langchain.agents import create_agent
@@ -27,6 +26,8 @@ Use available tools to gather accurate, up-to-date information and synthesise it
 <tools>
 - search_web: Find relevant sources. Use full entity names in queries (e.g. "Advanced Micro Devices" over "AMD").
 - read_website: Extract full page content. Use this for detailed reports instead of relying on search snippets alone.
+- tavily_search: Independent real-time web search with source URLs and page excerpts.
+- tavily_extract: Cleanly extract one or more webpages when ordinary page reading is incomplete or blocked.
 - get_weather: Current weather conditions for a location.
 - get_news: Latest headlines on a topic.
 - wikipedia_search: Encyclopedia summaries and page snippets.
@@ -42,13 +43,20 @@ Use available tools to gather accurate, up-to-date information and synthesise it
 
 <workflow>
 1. Identify the core topic and any formatting or length constraints.
-2. Run search_web, then read_website on the most promising sources for in-depth requests.
+2. For in-depth requests, use multiple independent search sources and read the most promising pages.
 3. Synthesise findings into a structured Markdown response that meets all user constraints exactly (word counts, paragraph counts, etc.).
 </workflow>
 
-<mode>
-{mode_guidance}
-</mode>
+<depth_decision>
+Decide the appropriate depth from the meaning of the user's request, not from
+word matching. For an isolated factual lookup, use the most reliable relevant
+source and answer directly. When the request needs a report, analysis,
+comparison, recommendation, or substantial factual context, use a source-driven
+workflow: run multiple independent web searches, read at least two substantive
+non-Wikipedia pages, compare their evidence, identify uncertainty, and include
+direct source URLs. Do not stop at search snippets or present Wikipedia alone
+as a thorough answer.
+</depth_decision>
 
 <output_rules>
 - Return a clear Markdown summary or report directly — no preamble, no reasoning section.
@@ -57,121 +65,29 @@ Use available tools to gather accurate, up-to-date information and synthesise it
 </output_rules>
 """
 
-_FAST_MODE_GUIDANCE = """\
-- Prioritise speed and stability for short factual requests.
-- Stop as soon as you have enough confidence to answer.
-- Keep tool hops minimal (typically 1-2) and avoid repeatedly reading many full webpages.
-"""
-
-_DEEP_MODE_GUIDANCE = """\
-- Prioritise completeness for analysis, comparisons, and source-heavy requests.
-- Gather multiple sources when needed and synthesise them with citations.
-- Do not loop indefinitely; stop after sufficient evidence is collected.
-"""
-
-_DEEP_INTENT_KEYWORDS = (
-    "deep",
-    "detailed",
-    "analyze",
-    "analysis",
-    "compare",
-    "comparison",
-    "report",
-    "with sources",
-    "cite",
-    "citations",
-    "step-by-step",
-)
-
-_STRUCTURAL_MARKERS = (
-    " then ",
-    " also ",
-    " additionally ",
-    " in addition ",
-    " versus ",
-    " vs ",
-)
-
-_OUTPUT_CONSTRAINT_PATTERN = re.compile(
-    r"(\b\d+\s*(words?|paragraphs?|sections?|bullets?)\b|table|markdown|sources?)",
-    re.IGNORECASE,
-)
-
 _agent = None
-_fast_agent = None
-_deep_agent = None
 
 
-def _build(mode: str = "deep") -> Any:
+def _build() -> Any:
     try:
         tz = pytz.timezone(Config.TZ)
         now_str = datetime.now(tz).strftime("%A, %B %d, %Y")
-        mode_guidance = _FAST_MODE_GUIDANCE if mode == "fast" else _DEEP_MODE_GUIDANCE
-        temperature = 0.25 if mode == "fast" else 0.4
 
         return create_agent(
             model=init_chat_model(
                 api_key=Config.get_ai_api_key(),
                 model=Config.TOOL_MODEL,
-                temperature=temperature,
+                temperature=0.35,
                 timeout=Config.TIMEOUT_SECONDS,
                 max_retries=Config.MAX_RETRIES,
             ),
             tools=get_info_tools(),
-            system_prompt=_BASE_PROMPT.format(
-                current_date=now_str,
-                mode_guidance=mode_guidance,
-            ),
+            system_prompt=_BASE_PROMPT.format(current_date=now_str),
             name="Expert Research Information Agent",
         )
     except Exception as exc:
-        logger.warning(f"[info_agent] {mode} build failed: {exc}")
+        logger.warning(f"[info_agent] build failed: {exc}")
         return None
-
-
-def _choose_research_mode(request: str) -> Tuple[str, list[str]]:
-    text = (request or "").strip()
-    lowered = text.lower()
-    reasons: list[str] = []
-
-    if any(keyword in lowered for keyword in _DEEP_INTENT_KEYWORDS):
-        reasons.append("explicit_deep_intent")
-
-    if _OUTPUT_CONSTRAINT_PATTERN.search(lowered):
-        reasons.append("output_constraint")
-
-    structural_score = 0
-    if len(text) >= 220:
-        structural_score += 1
-    if sum(lowered.count(marker) for marker in _STRUCTURAL_MARKERS) >= 2:
-        structural_score += 1
-    if text.count("?") >= 2:
-        structural_score += 1
-
-    if structural_score >= 2:
-        reasons.append("complex_structure")
-
-    mode = "deep" if reasons else "fast"
-    return mode, reasons
-
-
-def _recursion_limit_for_mode(mode: str) -> int:
-    if mode == "deep":
-        return max(25, int(Config.INFO_DEEP_RECURSION_LIMIT))
-    return max(5, int(Config.INFO_FAST_RECURSION_LIMIT))
-
-
-def _get_or_build_mode_agent(mode: str):
-    global _fast_agent, _deep_agent
-
-    if mode == "fast":
-        if _fast_agent is None:
-            _fast_agent = _build(mode="fast")
-        return _fast_agent
-
-    if _deep_agent is None:
-        _deep_agent = _build(mode="deep")
-    return _deep_agent
 
 
 def _extract_response(result: dict[str, Any]) -> str:
@@ -222,10 +138,10 @@ def _recent_context_fallback() -> str:
     )
 
 
-def _invoke_info_agent(agent: Any, request: str, mode: str) -> str:
+def _invoke_info_agent(agent: Any, request: str) -> str:
     result = agent.invoke(
         {"messages": [{"role": "user", "content": request}]},
-        {"recursion_limit": _recursion_limit_for_mode(mode)},
+        {"recursion_limit": max(25, int(Config.INFO_RECURSION_LIMIT))},
     )
     record_agent_invocation("info_agent", request, result.get("messages", []))
     return _extract_response(result)
@@ -236,7 +152,8 @@ def _invoke_info_agent(agent: Any, request: str, mode: str) -> str:
         "Use for: weather, news, web search, Wikipedia, Wikidata, StackExchange, "
         "NASA media, Yahoo Finance, YouTube, and reading URLs.\n"
         "Provide: A full natural-language research request with complete context.\n"
-        "Returns: A Markdown summary or direct answer.\n"
+        "Returns: A Markdown summary or direct answer. Research requests use "
+        "multiple non-Wikipedia sources and include direct source links.\n"
         'Example: info_agent_tool(request="What is the current weather in Jersey City, NJ?")\n'
         'Example: info_agent_tool(request="Search for rising sea level projections 2025 '
         'and read the top articles")'
@@ -250,60 +167,16 @@ def info_agent_tool(request: str = "", query: str = "") -> str:
         return "Please provide a research request."
     global _agent
 
-    mode = "deep"
-    reasons: list[str] = []
-    if Config.INFO_ADAPTIVE_ROUTING_ENABLED:
-        mode, reasons = _choose_research_mode(effective_request)
-
-    if _agent is not None:
-        selected_agent = _agent
-        selected_mode = "deep"
-        logger.debug("[info_agent] using legacy _agent override")
-    else:
-        selected_agent = _get_or_build_mode_agent(mode)
-        selected_mode = mode
-
-    if selected_agent is None:
+    if _agent is None:
+        _agent = _build()
+    if _agent is None:
         return "Research agent is currently unavailable."
 
     try:
-        logger.info(
-            "[info_agent] mode=%s reasons=%s request=%.80s",
-            selected_mode,
-            reasons or ["default"],
-            effective_request,
-        )
-        return _invoke_info_agent(selected_agent, effective_request, selected_mode)
+        logger.info("[info_agent] request=%.80s", effective_request)
+        return _invoke_info_agent(_agent, effective_request)
     except GraphRecursionError as exc:
-        logger.warning(
-            "[info_agent] recursion hit in mode=%s (limit=%s): %s",
-            selected_mode,
-            _recursion_limit_for_mode(selected_mode),
-            exc,
-        )
-
-        should_escalate = (
-            selected_mode == "fast"
-            and Config.INFO_FAST_TO_DEEP_ESCALATION_ENABLED
-            and _agent is None
-        )
-        if should_escalate:
-            deep_agent = _get_or_build_mode_agent("deep")
-            if deep_agent is not None:
-                try:
-                    logger.info("[info_agent] escalating fast query to deep mode")
-                    return _invoke_info_agent(deep_agent, effective_request, "deep")
-                except GraphRecursionError:
-                    logger.warning("[info_agent] deep escalation also hit recursion")
-                    return _recent_context_fallback()
-                except Exception as deep_exc:
-                    logger.error(
-                        "[info_agent] deep escalation failed: %s",
-                        deep_exc,
-                        exc_info=True,
-                    )
-                    return _recent_context_fallback()
-
+        logger.warning("[info_agent] recursion limit reached: %s", exc)
         return _recent_context_fallback()
     except Exception as exc:
         logger.error(f"[info_agent] error: {exc}", exc_info=True)

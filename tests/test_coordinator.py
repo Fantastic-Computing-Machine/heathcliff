@@ -117,10 +117,10 @@ class TestCoordinatorStability:
         def failed_research(request="", **kwargs):
             return "Research failed: Gemini quota exhausted"
 
-        def email(request="", **kwargs):
+        def downstream(request="", **kwargs):
             nonlocal email_called
             email_called = True
-            return "Email sent"
+            return "Downstream action completed"
 
         registry.register(
             AgentDescriptor(
@@ -131,7 +131,9 @@ class TestCoordinatorStability:
         )
         registry.register(
             AgentDescriptor(
-                name="email_agent_tool", capabilities=["email"], invoke_fn=email
+                name="downstream_agent",
+                capabilities=["downstream"],
+                invoke_fn=downstream,
             )
         )
         plan = [
@@ -143,7 +145,7 @@ class TestCoordinatorStability:
             },
             {
                 "goal": "Use the research context",
-                "target_agent": "email_agent_tool",
+                "target_agent": "downstream_agent",
                 "depends_on": [0],
                 "parallelizable": False,
             },
@@ -177,13 +179,13 @@ class TestCoordinatorStability:
             },
             {
                 "goal": "forward dep, cycle part 1",
-                "target_agent": "calendar_agent_tool",
+                "target_agent": "info_agent_tool",
                 "depends_on": [3],
                 "parallelizable": False,
             },
             {
                 "goal": "cycle part 2",
-                "target_agent": "email_agent_tool",
+                "target_agent": "info_agent_tool",
                 "depends_on": [2],
                 "parallelizable": False,
             },
@@ -418,6 +420,14 @@ class TestCoordinatorStability:
     def test_stream_complete_uses_deduped_first_seen_agents(self, registry):
         from core.coordinator_graph import build_coordinator_graph, stream_coordinator
 
+        registry.register(
+            AgentDescriptor(
+                name="secondary_agent",
+                capabilities=["secondary"],
+                invoke_fn=lambda request="", **_: "Secondary completed",
+            )
+        )
+
         plan = [
             {
                 "goal": "first info",
@@ -432,8 +442,8 @@ class TestCoordinatorStability:
                 "parallelizable": False,
             },
             {
-                "goal": "calendar task",
-                "target_agent": "calendar_agent_tool",
+                "goal": "secondary task",
+                "target_agent": "secondary_agent",
                 "depends_on": [],
                 "parallelizable": False,
             },
@@ -446,6 +456,6 @@ class TestCoordinatorStability:
 
         assert complete["data"]["agents_used"] == [
             "info_agent_tool",
-            "calendar_agent_tool",
+            "secondary_agent",
         ]
         assert complete["data"]["agent_count"] == 2
