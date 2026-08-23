@@ -3,16 +3,17 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from contextlib import contextmanager
+from typing import Any, Dict, Generator, Literal, Optional
 
 from langfuse import Langfuse, propagate_attributes  # noqa: F401 (re-exported)
 from langfuse.langchain import CallbackHandler
+from opentelemetry import trace
 
 from config import Config
 from logger import logger
 
 _langfuse_client: Optional[Langfuse] = None
-_langfuse_handler: Optional[CallbackHandler] = None
 
 
 def _is_enabled() -> bool:
@@ -56,17 +57,15 @@ def get_langfuse_client() -> Optional[Langfuse]:
 
 
 def get_langfuse_callback_handler() -> Optional[CallbackHandler]:
-    """Return a cached LangChain CallbackHandler.
+    """Build a LangChain callback handler for one Heathcliff request.
 
     Session and user context should be injected per-request via
     ``propagate_attributes(session_id=..., user_id=...)`` rather than
     through handler constructor kwargs (not supported in Langfuse v3).
+
+    Callback handlers retain LangChain run IDs while a request is active, so
+    sharing one between concurrent requests disconnects child observations.
     """
-    global _langfuse_handler
-
-    if _langfuse_handler is not None:
-        return _langfuse_handler
-
     if not _is_enabled():
         return None
 
@@ -77,12 +76,49 @@ def get_langfuse_callback_handler() -> Optional[CallbackHandler]:
         return None
 
     try:
-        _langfuse_handler = CallbackHandler()
+        handler = CallbackHandler(public_key=Config.LANGFUSE_PUBLIC_KEY)
         logger.debug("Langfuse callback handler initialized")
+        return handler
     except Exception as exc:
         logger.warning(f"Unable to initialize Langfuse callback handler: {exc}")
+        return None
 
-    return _langfuse_handler
+
+@contextmanager
+def trace_observation(
+    name: str,
+    *,
+    input: Any = None,
+    as_type: Literal["agent", "chain", "span", "tool"] = "span",
+) -> Generator[Any | None, None, None]:
+    """Nest a coordinator step under the active Langfuse request, if any."""
+    if not trace.get_current_span().get_span_context().is_valid:
+        yield None
+        return
+
+    client = get_langfuse_client()
+    if client is None:
+        yield None
+        return
+
+    try:
+        observation_context = client.start_as_current_observation(
+            name=name,
+            as_type=as_type,
+            input=input,
+        )
+    except Exception as exc:
+        logger.warning("Unable to start Langfuse observation %s: %s", name, exc)
+        yield None
+        return
+
+    with observation_context as observation:
+        yield observation
+
+
+def is_langfuse_callback_handler(callback: Any) -> bool:
+    """Return whether a callback is Langfuse's LangChain adapter."""
+    return isinstance(callback, CallbackHandler)
 
 
 if __name__ == "__main__":  # pragma: no cover - manual diagnostic helper

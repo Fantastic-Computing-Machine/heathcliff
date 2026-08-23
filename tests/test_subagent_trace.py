@@ -1,7 +1,11 @@
 from contextvars import ContextVar
 
 from core.coordinator_graph import _execute_with_timeout
-from core.subagents._runner import capture_agent_invocations, run_agent
+from core.subagents._runner import (
+    capture_agent_invocations,
+    run_agent,
+    use_agent_callbacks,
+)
 
 
 class _Message:
@@ -51,6 +55,20 @@ def test_capture_agent_invocations_records_tool_calls_and_results():
             ],
         }
     ]
+
+
+def test_run_agent_forwards_request_callbacks_to_the_nested_agent():
+    class CallbackAwareAgent(_Agent):
+        def invoke(self, _input, config=None):
+            self.config = config
+            return super().invoke(_input)
+
+    callback = object()
+    agent = CallbackAwareAgent()
+    with use_agent_callbacks([callback]):
+        assert run_agent(agent, "find x", "test_agent", "failed") == "Complete"
+
+    assert agent.config == {"callbacks": [callback]}
 
 
 def test_timeout_worker_preserves_diagnostic_context():

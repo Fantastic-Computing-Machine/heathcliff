@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
+from langchain_core.tools import BaseTool
+
+from core.runtime_profile import use_tool_model
 from logger import logger
 
 
@@ -15,7 +18,7 @@ class AgentDescriptor:
 
     name: str
     capabilities: List[str]
-    invoke_fn: Callable[..., Any]
+    invoke_fn: Callable[..., Any] | BaseTool
     locality: str = "local"  # "local" | "remote" | "deep"
     timeout_ms: int = 60000
     sensitive_actions: List[str] = field(default_factory=list)
@@ -49,7 +52,10 @@ class CapabilityRegistry:
         return list(self._agents.keys())
 
 
-def build_default_registry() -> CapabilityRegistry:
+def build_default_registry(
+    enabled_agent_names: Iterable[str] | None = None,
+    tool_model: str | None = None,
+) -> CapabilityRegistry:
     """Build registry populated with all local subagent descriptors.
 
     Lazily imports subagents and skills to avoid circular imports.
@@ -63,7 +69,19 @@ def build_default_registry() -> CapabilityRegistry:
     from core.subagents.music.agent import music_agent_tool
     from skills.skill_tools import get_skill_tools
 
+    enabled = set(enabled_agent_names) if enabled_agent_names is not None else None
     registry = CapabilityRegistry()
+
+    def bind_tool_model(tool: Any) -> Callable[..., Any]:
+        def invoke(*, request: str) -> Any:
+            if tool_model is None:
+                return tool.invoke({"request": request})
+            with use_tool_model(tool_model):
+                if isinstance(tool, BaseTool):
+                    return tool.invoke({"request": request})
+                return tool(request=request)
+
+        return invoke
 
     descriptors = [
         AgentDescriptor(
@@ -139,20 +157,24 @@ def build_default_registry() -> CapabilityRegistry:
     ]
 
     for desc in descriptors:
-        registry.register(desc)
+        if tool_model is not None and desc.name.endswith("_agent_tool"):
+            desc.invoke_fn = bind_tool_model(desc.invoke_fn)
+        if enabled is None or desc.name in enabled:
+            registry.register(desc)
 
     # Register skill tools
     try:
         for skill_tool in get_skill_tools():
             name = getattr(skill_tool, "name", str(skill_tool))
-            registry.register(
-                AgentDescriptor(
-                    name=name,
-                    capabilities=[name.replace("_", " ")],
-                    invoke_fn=skill_tool,
-                    sensitive_actions=[],
+            if enabled is None or name in enabled:
+                registry.register(
+                    AgentDescriptor(
+                        name=name,
+                        capabilities=[name.replace("_", " ")],
+                        invoke_fn=skill_tool,
+                        sensitive_actions=[],
+                    )
                 )
-            )
     except Exception as exc:
         logger.warning("Failed to register skill tools: %s", exc)
 

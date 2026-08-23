@@ -182,14 +182,14 @@ def test_agent_stream_stops_at_approval_without_saving_a_completed_turn():
 
 
 def test_streamlit_approve_and_reject_buttons_call_resume_api():
-    source = Path("ui/Home.py").read_text(encoding="utf-8")
+    source = Path("ui/views/command_center.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     approval_values = {
         keyword.value.value
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "resume_approval"
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_resume_approval"
         for keyword in node.keywords
         if keyword.arg == "approved" and isinstance(keyword.value, ast.Constant)
     }

@@ -3,6 +3,7 @@
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from email.message import EmailMessage
+from html.parser import HTMLParser
 from typing import Any, Dict, List, cast
 
 from googleapiclient.discovery import build
@@ -22,6 +23,40 @@ def _get_gmail_service():
 
 
 _gmail_api_resource = None
+
+
+class _EmailHTMLTextParser(HTMLParser):
+    """Convert HTML mail bodies to readable text for the Gmail search tool."""
+
+    _BREAK_TAGS = {"br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+        self._ignored_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style"}:
+            self._ignored_depth += 1
+        elif not self._ignored_depth and tag == "li":
+            self.parts.append("\n- ")
+        elif not self._ignored_depth and tag in self._BREAK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style"} and self._ignored_depth:
+            self._ignored_depth -= 1
+        elif not self._ignored_depth and tag in self._BREAK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._ignored_depth:
+            self.parts.append(data)
+
+    def text(self) -> str:
+        return "\n".join(
+            line.strip() for line in "".join(self.parts).splitlines() if line.strip()
+        )
 
 
 class SignedGmailCreateDraft(GmailCreateDraft):
@@ -58,9 +93,15 @@ class SafeGmailSearch(GmailSearch):
     def _plain_text(payload: Dict[str, Any]) -> str:
         body = payload.get("body", {})
         encoded = body.get("data", "")
-        if payload.get("mimeType", "").lower() == "text/plain" and encoded:
+        mime_type = payload.get("mimeType", "").lower()
+        if mime_type in {"text/plain", "text/html"} and encoded:
             padding = "=" * (-len(encoded) % 4)
-            return urlsafe_b64decode(encoded + padding).decode("utf-8", "replace")
+            decoded = urlsafe_b64decode(encoded + padding).decode("utf-8", "replace")
+            if mime_type == "text/html":
+                parser = _EmailHTMLTextParser()
+                parser.feed(decoded)
+                return parser.text()
+            return decoded
         for part in payload.get("parts", []):
             text = SafeGmailSearch._plain_text(part)
             if text:

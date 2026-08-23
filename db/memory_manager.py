@@ -18,6 +18,7 @@ from logger import logger
 from utils.errors import AgentMemoryError
 
 CHROMA_QUERY_BATCH_SIZE = 200
+MEMORY_QUERY_LIMIT = 10_000
 
 
 class _Mem0CollectionAdapter:
@@ -28,12 +29,15 @@ class _Mem0CollectionAdapter:
         self._user_id = user_id
         self._agent_id = agent_id
 
-    def get(self, limit: int = 100) -> Dict[str, List[Any]]:
-        if limit > CHROMA_QUERY_BATCH_SIZE:
-            limit = CHROMA_QUERY_BATCH_SIZE
+    def get(self, limit: int = 100, offset: int = 0) -> Dict[str, List[Any]]:
+        """Return a page of memories using Mem0's bounded list API."""
+        limit = min(max(limit, 1), MEMORY_QUERY_LIMIT)
+        offset = max(offset, 0)
         try:
             result = self._client.get_all(
-                user_id=self._user_id, agent_id=self._agent_id, limit=limit
+                user_id=self._user_id,
+                agent_id=self._agent_id,
+                limit=min(limit + offset, MEMORY_QUERY_LIMIT),
             )
         except Exception as exc:
             logger.warning("Mem0 get_all failed: %s", exc)
@@ -59,6 +63,10 @@ class _Mem0CollectionAdapter:
                 metadatas.append(meta)
                 ids.append(str(item.get("id") or item.get("memory_id") or ""))
 
+        if offset:
+            documents = documents[offset : offset + limit]
+            metadatas = metadatas[offset : offset + limit]
+            ids = ids[offset : offset + limit]
         return {"documents": documents, "metadatas": metadatas, "ids": ids}
 
 
@@ -131,12 +139,24 @@ class MemoryManager:
     # ------------------------------------------------------------------
 
     def save_turn(
-        self, user_msg: str, assistant_msg: str, conversation_id: str
+        self,
+        user_msg: str,
+        assistant_msg: str,
+        conversation_id: str,
+        execution_events: Optional[List[Dict[str, Any]]] = None,
     ) -> tuple[str, str]:
         """Persist turn and enqueue background memory extraction."""
-        user_id, asst_id = self._conversation_manager.save_turn(
-            user_msg, assistant_msg, conversation_id
-        )
+        if execution_events is None:
+            user_id, asst_id = self._conversation_manager.save_turn(
+                user_msg, assistant_msg, conversation_id
+            )
+        else:
+            user_id, asst_id = self._conversation_manager.save_turn(
+                user_msg,
+                assistant_msg,
+                conversation_id,
+                execution_events=execution_events,
+            )
         # Fire-and-forget extraction via the queue worker
         self._extraction_queue.put(
             (user_msg, assistant_msg, conversation_id, self._last_turn_id(user_id))

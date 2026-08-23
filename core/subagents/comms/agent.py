@@ -8,6 +8,7 @@ from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 
 from config import Config
+from core.runtime_profile import current_tool_model
 from core.subagents._runner import run_agent
 from core.subagents.comms.tools import get_comm_tools
 from logger import logger
@@ -25,15 +26,17 @@ Send messages and notifications via Telegram using the available tools.
 </rules>
 """
 
+_agents: dict[str, Any] = {}
+# Compatibility seam for existing integrations and unit tests.
 _agent = None
 
 
-def _build() -> Any:
+def _build(model_name: str) -> Any:
     try:
         return create_agent(
             model=init_chat_model(
                 api_key=Config.get_ai_api_key(),
-                model=Config.TOOL_MODEL,
+                model=model_name,
                 temperature=0.6,
                 max_tokens=Config.MAX_TOKENS,
                 timeout=Config.TIMEOUT_SECONDS,
@@ -59,8 +62,14 @@ def _build() -> Any:
 def comms_agent_tool(request: str) -> str:
     """Send Telegram messages and notifications."""
     global _agent
-    if _agent is None:
-        _agent = _build()
-    if _agent is None:
+    model_name = current_tool_model(Config.TOOL_MODEL)
+    if _agent is not None:
+        agent = _agent
+    elif model_name not in _agents:
+        _agents[model_name] = _build(model_name)
+        agent = _agents[model_name]
+    else:
+        agent = _agents[model_name]
+    if agent is None:
         return "Communications agent is currently unavailable."
-    return run_agent(_agent, request, "comms_agent", "Communications failed")
+    return run_agent(agent, request, "comms_agent", "Communications failed")

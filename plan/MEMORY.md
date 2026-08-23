@@ -2,6 +2,24 @@
 
 This file serves as the **working memory** for all coding agents on the Heathcliff project. It tracks discoveries, issues, and recent activity. For complete project documentation, see `AGENTS.md`.
 
+## 2026-08-23 Streamlit Blank-Page Repair
+
+- The control-panel router had registered each view's source file with `st.Page`, but the files intentionally only define `render()` and therefore displayed no elements when Streamlit executed them. The page could load with an empty body.
+- `ui/Home.py` now registers the `render` callables directly and assigns unique URL paths to every non-default page (callables otherwise all infer the conflicting `render` path). The default route renders Command Center. Verified with Streamlit `AppTest` against the real entry point and the full suite (`332 passed`).
+
+## 2026-08-16 Langfuse Trace Integrity
+
+- Root cause of duplicate/disconnected rows: `HeathcliffAgent` opened a manual root observation while a process-global LangChain `CallbackHandler` emitted each outer specialist dispatch as another root. The real nested specialist agents never received that handler, so their model/tool loops were absent.
+- The callback handler is now request-scoped and explicitly bound to the configured Langfuse project. Heathcliff records one root agent observation with `coordinator.plan`, `coordinator.plan_repair`, `coordinator.aggregate`, and one direct agent observation per specialist task. The handler is forwarded into every nested LangGraph specialist, which records its model generations and native tool calls, inputs, and outputs below that specialist.
+- The outer manual callback bridge still serves non-Langfuse callbacks (including legacy approval tests), but excludes the marked Langfuse handler so it cannot invert or duplicate the trace tree.
+- Coordinator observations refuse to start without an active Heathcliff root, preventing direct graph calls and test runs from producing unrelated Langfuse root traces.
+- Live non-mutating Langfuse verification produced one trace with `heathcliff.trace-smoke-v2 -> info_agent_tool -> nested_agent_loop`; full test suite passed with 331 tests. No AI request or external action was made for the smoke check.
+
+## 2026-08-23 Legacy Langfuse Trace Annotation
+
+- Langfuse cannot reparent or repair already-ingested observations. The 48 objectively affected pre-repair standalone specialist roots (Info, Music, Email, Calendar, and Contacts, dated 2026-08-14 through 2026-08-15 UTC) were retained and non-destructively labelled through the Langfuse Scores API.
+- Each has the categorical `trace_integrity=legacy_orphaned_specialist_root` score, an explanation that it is an incomplete child of a Heathcliff request, and metadata identifying the repair. The labels were verified in the configured Langfuse project; no trace was deleted, rewritten, or re-ingested.
+
 ## 2026-08-15 Context Manager Annotation
 
 - Updated `core/subagents/_runner.py:capture_agent_invocations()` from `Iterator[...]` to `Generator[..., None, None]` for `@contextmanager` compatibility. Ruff passed and all 314 tests passed; `ty` still reports the same 34 unrelated diagnostics.
@@ -416,6 +434,20 @@ heathcliff/
 ---
 
 ## Project Status
+
+- **2026-08-16: Email resend reliability** ✅
+  - Diagnosed a real resend to Ram: Gmail search ignored `text/html` bodies, so the email agent copied Gmail's truncated preview (`...`) and retained the original Aditya/Nilesh greeting.
+  - `SafeGmailSearch` now extracts readable text from full HTML mail payloads, and the email-agent prompt directs semantic resend requests to use the complete body with a recipient-specific greeting.
+  - Added regression coverage for HTML body extraction; no outbound message was sent during diagnosis or verification.
+
+- **2026-08-15: Streamlit control panel rebuild** ✅
+  - Replaced legacy page scripts with a shared `st.navigation` shell and focused Command Center, Agent Controls, Runs & Traces, Analytics, Memories, and Conversations views.
+  - Runtime settings now use a process-local, revisioned `RuntimeProfile`; future requests get a fresh coordinator while a pending approval keeps its original agent snapshot.
+  - Specialist agents bind their model to the run profile, rather than mutating global `Config` values.
+  - The Command Center restores Heathcliff's weather-aware British-butler greeting for new conversations and keeps approval actions resumable.
+  - Completed streamed turns persist their coordinator events in conversation metadata. Conversations show those events in an accordion after the relevant message; Analytics presents them in full-width tables.
+  - The Memories view always shows active data, 50 per page, without custom CSS. The UI intentionally stays close to default Streamlit pending a future Next.js migration.
+  - Verified `uv run ruff check --fix . && uv run ruff format .` and `uv run pytest tests -q -s` (`325 passed`). `uvx ty check` has 25 pre-existing diagnostics outside this change set.
 
 **Phases 1–4 Complete** ✅ — Subagents architecture refactor, skills framework (3 skills), Mem0 memory, 3D Blob UI, Langfuse observability, master profile TOML migration, user reference generalization, weather API LangChain wrapper, JSON-backed recent context store, middleware stack (tool selector + call limits + todo list + alias rewriting), prompt optimization (XML-delimited system prompt, normalized tool descriptions, slimmed subagent prompts) all completed. Full test suite: 237 passed. **Phase 5 (Testing & Polish) In Progress** ⏳
 

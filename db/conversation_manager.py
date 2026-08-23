@@ -1,6 +1,7 @@
 # ABOUTME: ConversationManager — saves, retrieves, and reconstructs conversation turns.
 # ABOUTME: Uses heathcliff_conversations Chroma collection; returns real LangChain messages.
 
+import json
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -41,7 +42,11 @@ class ConversationManager:
     # ------------------------------------------------------------------
 
     def save_turn(
-        self, user_msg: str, assistant_msg: str, conversation_id: str
+        self,
+        user_msg: str,
+        assistant_msg: str,
+        conversation_id: str,
+        execution_events: Optional[List[Dict[str, Any]]] = None,
     ) -> tuple[str, str]:
         """Persist a user/assistant turn as two ConversationMessageRecords.
 
@@ -65,6 +70,7 @@ class ConversationManager:
             created_at=now.isoformat(),
             metadata={"order": now.timestamp()},
         )
+        events_json = json.dumps(execution_events or [], default=str)
         asst_record = ConversationMessageRecord(
             id=asst_id,
             conversation_id=conversation_id,
@@ -74,7 +80,10 @@ class ConversationManager:
             searchable_text=assistant_msg,
             message_payload={"type": "text", "text": assistant_msg},
             created_at=asst_time.isoformat(),
-            metadata={"order": asst_time.timestamp()},
+            metadata={
+                "order": asst_time.timestamp(),
+                "execution_events_json": events_json,
+            },
         )
 
         self._collection.add(
@@ -99,6 +108,9 @@ class ConversationManager:
                     "order": asst_record.metadata["order"],
                     "message_payload": str(asst_record.message_payload),
                     "artifact_uris": str(asst_record.artifact_uris),
+                    "execution_events_json": asst_record.metadata[
+                        "execution_events_json"
+                    ],
                 },
             ],
             ids=[user_id, asst_id],
@@ -432,6 +444,13 @@ class ConversationManager:
 
     @staticmethod
     def _meta_to_dict(doc: str, meta: Dict[str, Any], msg_id: str) -> Dict[str, Any]:
+        raw_events = meta.get("execution_events_json", "[]")
+        try:
+            execution_events = json.loads(raw_events)
+        except (TypeError, json.JSONDecodeError):
+            execution_events = []
+        if not isinstance(execution_events, list):
+            execution_events = []
         return {
             "id": msg_id,
             "role": meta.get("role", "unknown"),
@@ -441,6 +460,7 @@ class ConversationManager:
             "created_at": meta.get("created_at", ""),
             "order": meta.get("order"),
             "message_index": meta.get("message_index", 0),
+            "execution_events": execution_events,
         }
 
     @staticmethod

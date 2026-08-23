@@ -69,6 +69,17 @@ class TestDelegation:
         )
         assert result == ("uid", "aid")
 
+    def test_save_turn_passes_execution_events(self, mm):
+        mm._conversation_manager = Mock()
+        mm._conversation_manager.save_turn.return_value = ("uid", "aid")
+        events = [{"type": "plan", "data": {}}]
+
+        mm.save_turn("Hello", "Hi", "conv-1", execution_events=events)
+
+        mm._conversation_manager.save_turn.assert_called_once_with(
+            "Hello", "Hi", "conv-1", execution_events=events
+        )
+
     def test_build_langchain_history_delegates(self, mm):
         mm._conversation_manager = Mock()
         mm._conversation_manager.build_langchain_history.return_value = []

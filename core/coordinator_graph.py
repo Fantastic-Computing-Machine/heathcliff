@@ -32,7 +32,9 @@ from core.delegation.contracts import (
 )
 from core.delegation.registry import CapabilityRegistry
 from core.middleware import DelegationBudget, create_execution_budget
+from core.subagents._runner import use_agent_callbacks
 from logger import logger
+from utils.langfuse_client import is_langfuse_callback_handler, trace_observation
 
 
 class CoordinatorState(TypedDict, total=False):
@@ -233,10 +235,19 @@ def _repair_planner_output(
             )
         ),
     ]
-    repair_result = llm.invoke(repair_messages)
-    repair_raw = _extract_llm_text(
-        repair_result.content if hasattr(repair_result, "content") else repair_result
-    )
+    with trace_observation(
+        "coordinator.plan_repair",
+        as_type="chain",
+        input={"user_input": user_input, "invalid_output": raw_output},
+    ) as observation:
+        repair_result = llm.invoke(repair_messages)
+        repair_raw = _extract_llm_text(
+            repair_result.content
+            if hasattr(repair_result, "content")
+            else repair_result
+        )
+        if observation is not None:
+            observation.update(output={"planner_response": repair_raw})
     return _parse_planner_tasks(repair_raw)
 
 
@@ -268,10 +279,20 @@ def _plan(
         plan_messages.append(HumanMessage(content=user_input))
 
     try:
-        result = llm.invoke(plan_messages)
-        raw = _extract_llm_text(
-            result.content if hasattr(result, "content") else result
-        )
+        with trace_observation(
+            "coordinator.plan",
+            as_type="chain",
+            input={
+                "user_input": user_input,
+                "available_agents": registry.agent_names(),
+            },
+        ) as observation:
+            result = llm.invoke(plan_messages)
+            raw = _extract_llm_text(
+                result.content if hasattr(result, "content") else result
+            )
+            if observation is not None:
+                observation.update(output={"planner_response": raw})
         planner_tasks = _parse_planner_tasks(raw)
     except (ValidationError, json.JSONDecodeError, TypeError) as exc:
         logger.warning(
@@ -366,6 +387,13 @@ def _safe_callback_call(callback: Any, method_name: str, **kwargs: Any) -> None:
         logger.warning(
             "[coordinator:callbacks] %s fallback failed: %s", method_name, exc
         )
+
+
+def _outer_task_callbacks(callbacks: Sequence[Any]) -> Sequence[Any]:
+    """Keep Langfuse's callback inside the specialist agent it is tracing."""
+    return tuple(
+        callback for callback in callbacks if not is_langfuse_callback_handler(callback)
+    )
 
 
 def _sanitize_dependency_output(text: str, max_chars: int) -> str:
@@ -507,7 +535,8 @@ def _execute_single_task(
 
     run_id = uuid.uuid4()
     serialized = {"name": descriptor.name, "id": ["tool", descriptor.name]}
-    for callback in callbacks:
+    outer_callbacks = _outer_task_callbacks(callbacks)
+    for callback in outer_callbacks:
         try:
             _safe_callback_call(
                 callback,
@@ -532,26 +561,34 @@ def _execute_single_task(
 
         def invoke() -> TaskResult:
             try:
-                if isinstance(descriptor.invoke_fn, BaseTool):
-                    output = descriptor.invoke_fn.invoke({"request": spec.goal})
-                else:
-                    output = descriptor.invoke_fn(request=spec.goal)
-                output_text = str(output) if output else "No response generated."
-                if _is_agent_failure(output_text):
-                    return TaskResult.failure(
+                with trace_observation(
+                    descriptor.name,
+                    as_type="agent",
+                    input={"task_id": spec.task_id, "request": spec.goal},
+                ) as observation:
+                    with use_agent_callbacks(callbacks):
+                        if isinstance(descriptor.invoke_fn, BaseTool):
+                            output = descriptor.invoke_fn.invoke({"request": spec.goal})
+                        else:
+                            output = descriptor.invoke_fn(request=spec.goal)
+                    output_text = str(output) if output else "No response generated."
+                    if observation is not None:
+                        observation.update(output={"response": output_text})
+                    if _is_agent_failure(output_text):
+                        return TaskResult.failure(
+                            task_id=spec.task_id,
+                            error=output_text,
+                            error_type=ErrorType.EXECUTION_ERROR,
+                            producer_agent=descriptor.name,
+                            latency_ms=int((time.monotonic() - start) * 1000),
+                        )
+                    return TaskResult(
                         task_id=spec.task_id,
-                        error=output_text,
-                        error_type=ErrorType.EXECUTION_ERROR,
+                        status=TaskStatus.COMPLETED,
+                        output=output_text,
                         producer_agent=descriptor.name,
                         latency_ms=int((time.monotonic() - start) * 1000),
                     )
-                return TaskResult(
-                    task_id=spec.task_id,
-                    status=TaskStatus.COMPLETED,
-                    output=output_text,
-                    producer_agent=descriptor.name,
-                    latency_ms=int((time.monotonic() - start) * 1000),
-                )
             except Exception as exc:
                 logger.error(
                     "[coordinator:task] %s failed: %s",
@@ -584,7 +621,7 @@ def _execute_single_task(
             producer_agent=descriptor.name,
             latency_ms=elapsed_ms,
         )
-        for callback in callbacks:
+        for callback in outer_callbacks:
             _safe_callback_call(
                 callback,
                 "on_tool_error",
@@ -597,7 +634,7 @@ def _execute_single_task(
     result.output = _extract_llm_text(result.output)
     if not result.producer_agent:
         result.producer_agent = descriptor.name
-    for callback in callbacks:
+    for callback in outer_callbacks:
         if result.is_success:
             _safe_callback_call(
                 callback,
@@ -766,10 +803,17 @@ def _aggregate(state: CoordinatorState, llm: Any) -> Dict[str, Any]:
             ),
         ]
         try:
-            agg_result = llm.invoke(agg_messages)
-            base_response = _extract_llm_text(
-                agg_result.content if hasattr(agg_result, "content") else agg_result
-            ).strip()
+            with trace_observation(
+                "coordinator.aggregate",
+                as_type="chain",
+                input={"user_input": user_input, "subtask_results": result_summaries},
+            ) as observation:
+                agg_result = llm.invoke(agg_messages)
+                base_response = _extract_llm_text(
+                    agg_result.content if hasattr(agg_result, "content") else agg_result
+                ).strip()
+                if observation is not None:
+                    observation.update(output={"response": base_response})
         except Exception as exc:
             logger.warning("[coordinator:aggregate] LLM merge failed: %s", exc)
             base_response = "\n\n---\n\n".join(r.output for r in successful)

@@ -11,7 +11,8 @@ from langchain.tools import tool
 from langgraph.errors import GraphRecursionError
 
 from config import Config
-from core.subagents._runner import record_agent_invocation
+from core.runtime_profile import current_tool_model
+from core.subagents._runner import agent_callbacks, record_agent_invocation
 from core.subagents.info.recent_context import recent_context
 from core.subagents.info.tools import get_info_tools
 from logger import logger
@@ -65,10 +66,12 @@ as a thorough answer.
 </output_rules>
 """
 
+_agents: dict[str, Any] = {}
+# Compatibility seam for existing integrations and unit tests.
 _agent = None
 
 
-def _build() -> Any:
+def _build(model_name: str) -> Any:
     try:
         tz = pytz.timezone(Config.TZ)
         now_str = datetime.now(tz).strftime("%A, %B %d, %Y")
@@ -76,7 +79,7 @@ def _build() -> Any:
         return create_agent(
             model=init_chat_model(
                 api_key=Config.get_ai_api_key(),
-                model=Config.TOOL_MODEL,
+                model=model_name,
                 temperature=0.35,
                 timeout=Config.TIMEOUT_SECONDS,
                 max_retries=Config.MAX_RETRIES,
@@ -139,9 +142,15 @@ def _recent_context_fallback() -> str:
 
 
 def _invoke_info_agent(agent: Any, request: str) -> str:
+    callbacks = list(agent_callbacks())
+    config: dict[str, Any] = {
+        "recursion_limit": max(25, int(Config.INFO_RECURSION_LIMIT)),
+    }
+    if callbacks:
+        config["callbacks"] = callbacks
     result = agent.invoke(
         {"messages": [{"role": "user", "content": request}]},
-        {"recursion_limit": max(25, int(Config.INFO_RECURSION_LIMIT))},
+        config,
     )
     record_agent_invocation("info_agent", request, result.get("messages", []))
     return _extract_response(result)
@@ -166,15 +175,20 @@ def info_agent_tool(request: str = "", query: str = "") -> str:
     if not effective_request:
         return "Please provide a research request."
     global _agent
-
-    if _agent is None:
-        _agent = _build()
-    if _agent is None:
+    model_name = current_tool_model(Config.TOOL_MODEL)
+    if _agent is not None:
+        agent = _agent
+    elif model_name not in _agents:
+        _agents[model_name] = _build(model_name)
+        agent = _agents[model_name]
+    else:
+        agent = _agents[model_name]
+    if agent is None:
         return "Research agent is currently unavailable."
 
     try:
         logger.info("[info_agent] request=%.80s", effective_request)
-        return _invoke_info_agent(_agent, effective_request)
+        return _invoke_info_agent(agent, effective_request)
     except GraphRecursionError as exc:
         logger.warning("[info_agent] recursion limit reached: %s", exc)
         return _recent_context_fallback()

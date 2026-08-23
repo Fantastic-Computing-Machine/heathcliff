@@ -5,7 +5,9 @@
 # ABOUTME: construct once; subsequent calls to __init__ return the same object.
 
 import uuid
-from typing import Any, Dict, List, Optional
+from contextlib import contextmanager
+from itertools import chain
+from typing import Any, Dict, Generator, List, Optional
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
@@ -19,6 +21,7 @@ from core.coordinator_graph import (
     stream_coordinator,
 )
 from core.delegation.registry import build_default_registry
+from core.runtime_profile import RuntimeProfile
 from db.memory_manager import MemoryManager
 from instructions.prompts import (
     USER_PROMPT_TEMPLATE,
@@ -26,7 +29,7 @@ from instructions.prompts import (
 )
 from logger import logger
 from utils.errors import AgentMemoryError
-from utils.langfuse_client import get_langfuse_callback_handler
+from utils.langfuse_client import get_langfuse_callback_handler, get_langfuse_client
 
 INPUT_MAX_LENGTH = 10000
 
@@ -74,6 +77,8 @@ class HeathcliffAgent:
     def __init__(
         self,
         memory_manager: Optional[MemoryManager] = None,
+        runtime_profile: Optional[RuntimeProfile] = None,
+        runtime_profile_revision: int = 0,
     ):
         """Initialise the Heathcliff supervisor agent.
 
@@ -86,14 +91,17 @@ class HeathcliffAgent:
         self._initialised = True
 
         self.memory_manager = memory_manager
+        self.runtime_profile = runtime_profile or RuntimeProfile.defaults()
+        self.runtime_profile.validate()
+        self.runtime_profile_revision = runtime_profile_revision
 
         self.callbacks: List[Any] = []
 
         self.llm = init_chat_model(
             api_key=Config.get_ai_api_key(),
-            model=Config.SUPERVISOR_MODEL,
-            temperature=Config.TEMPERATURE,
-            max_tokens=Config.MAX_TOKENS,
+            model=self.runtime_profile.supervisor_model,
+            temperature=self.runtime_profile.temperature,
+            max_tokens=self.runtime_profile.max_tokens,
             top_p=Config.TOP_P,
             max_retries=3,
             timeout=Config.TIMEOUT_SECONDS,
@@ -103,13 +111,41 @@ class HeathcliffAgent:
 
     def _build_coordinator(self):
         """Build coordinator graph with capability registry."""
-        self._registry = build_default_registry()
+        self._registry = build_default_registry(
+            self.runtime_profile.enabled_agents,
+            tool_model=self.runtime_profile.tool_model,
+        )
         coordinator = build_coordinator_graph(registry=self._registry, llm=self.llm)
         logger.info(
             "Coordinator built with %d registered agents",
             len(self._registry.agent_names()),
         )
         return coordinator
+
+    @contextmanager
+    def _trace_request(
+        self, user_input: str, run_id: str
+    ) -> Generator[tuple[Any | None, str | None], None, None]:
+        """Create a Langfuse root observation when tracing is configured."""
+        client = get_langfuse_client()
+        if client is None:
+            yield None, None
+            return
+
+        try:
+            observation_context = client.start_as_current_observation(
+                name=Config.TRACE_NAME,
+                as_type="agent",
+                input={"query": user_input, "run_id": run_id},
+                metadata=self.runtime_profile.metadata(self.runtime_profile_revision),
+            )
+        except Exception as exc:
+            logger.warning("Unable to start Langfuse trace: %s", exc)
+            yield None, None
+            return
+
+        with observation_context as observation:
+            yield observation, client.get_trace_url()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -176,6 +212,7 @@ class HeathcliffAgent:
             "Processing input: '%.50s...' conversation: %s", user_input, conversation_id
         )
 
+        run_id = str(uuid.uuid4())
         try:
             chat_history = self.memory_manager.build_langchain_history(
                 query=user_input, conversation_id=conversation_id
@@ -192,19 +229,27 @@ class HeathcliffAgent:
             )
             messages = chat_history + [HumanMessage(content=formatted_input)]
 
-            with propagate_attributes(
-                session_id=conversation_id, user_id=Config.LANGFUSE_USER_ID
-            ):
-                callbacks = self._build_callbacks(additional_callbacks)
-                response = invoke_coordinator(
-                    compiled_graph=self.coordinator,
-                    user_input=user_input,
+            with self._trace_request(user_input, run_id) as (observation, _):
+                with propagate_attributes(
                     session_id=conversation_id,
-                    messages=messages,
-                    callbacks=callbacks,
-                )
-
-            response = response or "I encountered an error processing your request."
+                    user_id=Config.LANGFUSE_USER_ID,
+                    metadata=self.runtime_profile.metadata(
+                        self.runtime_profile_revision
+                    ),
+                ):
+                    callbacks = self._build_callbacks(additional_callbacks)
+                    response = invoke_coordinator(
+                        compiled_graph=self.coordinator,
+                        user_input=user_input,
+                        session_id=conversation_id,
+                        messages=messages,
+                        callbacks=callbacks,
+                    )
+                    response = (
+                        response or "I encountered an error processing your request."
+                    )
+                    if observation is not None:
+                        observation.update(output={"response": response})
 
             self.memory_manager.save_turn(user_input, response, conversation_id)
             logger.info("Response: '%.50s...'", response)
@@ -270,6 +315,7 @@ class HeathcliffAgent:
             "Streaming input: '%.50s...' conversation: %s", user_input, conversation_id
         )
 
+        run_id = str(uuid.uuid4())
         try:
             chat_history = self.memory_manager.build_langchain_history(
                 query=user_input, conversation_id=conversation_id
@@ -295,30 +341,94 @@ class HeathcliffAgent:
             messages = chat_history + [HumanMessage(content=formatted_input)]
 
             final_response = ""
+            execution_events: List[Dict[str, Any]] = []
             approval_pending = False
             callbacks = self._build_callbacks(additional_callbacks)
 
-            with propagate_attributes(
-                session_id=conversation_id, user_id=Config.LANGFUSE_USER_ID
-            ):
-                for event in stream_coordinator(
-                    compiled_graph=self.coordinator,
-                    user_input=user_input,
+            with self._trace_request(user_input, run_id) as (observation, trace_url):
+                with propagate_attributes(
                     session_id=conversation_id,
-                    messages=messages,
-                    callbacks=callbacks,
+                    user_id=Config.LANGFUSE_USER_ID,
+                    metadata=self.runtime_profile.metadata(
+                        self.runtime_profile_revision
+                    ),
                 ):
-                    yield event
-
-                    event_type = event.get("type", "")
-                    if event_type == "response":
-                        final_response = event.get("data", "")
-                    elif event_type == "approval_required":
+                    event_stream = iter(
+                        stream_coordinator(
+                            compiled_graph=self.coordinator,
+                            user_input=user_input,
+                            session_id=conversation_id,
+                            messages=messages,
+                            callbacks=callbacks,
+                        )
+                    )
+                    first_event = next(event_stream, None)
+                    if (
+                        isinstance(first_event, dict)
+                        and first_event.get("type") == "approval_required"
+                    ):
+                        # Preserve the established interrupt contract for callers
+                        # that only need to render an immediate approval prompt.
                         approval_pending = True
-                    elif event_type == "complete":
-                        event_response = event.get("data", {}).get("response", "")
-                        if event_response:
-                            final_response = event_response
+                        execution_events.append(dict(first_event))
+                        yield first_event
+                    else:
+                        yield {
+                            "type": "run_started",
+                            "message": "Run started",
+                            "data": {
+                                "run_id": run_id,
+                                "profile_revision": self.runtime_profile_revision,
+                                "trace_url": trace_url,
+                            },
+                        }
+                        execution_events.append(
+                            {
+                                "type": "run_started",
+                                "message": "Run started",
+                                "data": {
+                                    "run_id": run_id,
+                                    "profile_revision": self.runtime_profile_revision,
+                                    "trace_url": trace_url,
+                                },
+                            }
+                        )
+                    for event in (
+                        ()
+                        if approval_pending
+                        else chain(
+                            [first_event] if first_event is not None else [],
+                            event_stream,
+                        )
+                    ):
+                        enriched_event = dict(event)
+                        enriched_event["run_id"] = run_id
+                        enriched_event["profile_revision"] = (
+                            self.runtime_profile_revision
+                        )
+                        enriched_event["trace_url"] = trace_url
+                        yield enriched_event
+
+                        event_type = event.get("type", "")
+                        if event_type != "response":
+                            execution_events.append(
+                                {
+                                    "type": event_type,
+                                    "message": str(event.get("message", "")),
+                                    "data": event.get("data", {}),
+                                }
+                            )
+                        if event_type == "response":
+                            final_response = event.get("data", "")
+                        elif event_type == "approval_required":
+                            approval_pending = True
+                        elif event_type == "complete":
+                            event_response = event.get("data", {}).get("response", "")
+                            if event_response:
+                                final_response = event_response
+
+                if observation is not None and final_response:
+                    observation.update(output={"response": final_response})
 
             if approval_pending:
                 logger.info(
@@ -329,9 +439,19 @@ class HeathcliffAgent:
 
             if not final_response:
                 final_response = "I encountered an error processing your request."
-                yield {"type": "response", "data": final_response}
+                yield {
+                    "type": "response",
+                    "data": final_response,
+                    "run_id": run_id,
+                    "profile_revision": self.runtime_profile_revision,
+                }
 
-            self.memory_manager.save_turn(user_input, final_response, conversation_id)
+            self.memory_manager.save_turn(
+                user_input,
+                final_response,
+                conversation_id,
+                execution_events=execution_events,
+            )
             logger.info("Stream complete: '%.50s...'", final_response)
 
         except AgentMemoryError:
@@ -353,25 +473,43 @@ class HeathcliffAgent:
         user_input: str,
         approved: bool,
         modified_input: Optional[str] = None,
+        execution_events: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Resume the coordinator action paused for Streamlit approval."""
         if self.memory_manager is None:
             raise AgentMemoryError("MemoryManager not initialised")
 
-        with propagate_attributes(
-            session_id=conversation_id, user_id=Config.LANGFUSE_USER_ID
-        ):
-            callbacks = self._build_callbacks()
-            response = resume_coordinator(
-                compiled_graph=self.coordinator,
-                session_id=conversation_id,
-                approved=approved,
-                modified_input=modified_input,
-                callbacks=callbacks,
-            )
+        run_id = str(uuid.uuid4())
+        with self._trace_request(user_input, run_id) as (observation, _):
+            with propagate_attributes(
+                session_id=conversation_id, user_id=Config.LANGFUSE_USER_ID
+            ):
+                callbacks = self._build_callbacks()
+                response = resume_coordinator(
+                    compiled_graph=self.coordinator,
+                    session_id=conversation_id,
+                    approved=approved,
+                    modified_input=modified_input,
+                    callbacks=callbacks,
+                )
+                if observation is not None:
+                    observation.update(output={"response": response})
 
         response = response or "I encountered an error processing your request."
-        self.memory_manager.save_turn(user_input, response, conversation_id)
+        resolution_event = {
+            "type": "approval_resolved",
+            "message": "Action approved" if approved else "Action rejected",
+            "data": {"modified_input": modified_input or ""},
+        }
+        if execution_events is None:
+            self.memory_manager.save_turn(user_input, response, conversation_id)
+        else:
+            self.memory_manager.save_turn(
+                user_input,
+                response,
+                conversation_id,
+                execution_events=[*execution_events, resolution_event],
+            )
         return response
 
     def __repr__(self) -> str:

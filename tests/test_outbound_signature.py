@@ -91,3 +91,26 @@ def test_gmail_search_accepts_full_payload_without_raw():
     assert results[0]["subject"] == "Greetings"
     assert results[0]["body"] == "Hello from Gmail"
     assert api_resource.users().messages().get.call_args.kwargs["format"] == "full"
+
+
+def test_gmail_search_reads_a_full_html_body_instead_of_a_snippet():
+    html = "<html><style>.ignored { color: red; }</style><body><p>Hello Ram,</p><ul><li>First full point</li><li>Second full point</li></ul></body></html>"
+    encoded = base64.urlsafe_b64encode(html.encode()).decode()
+    response = {
+        "threadId": "thread-1",
+        "snippet": "Hello Ram, Here is the first point...",
+        "payload": {
+            "mimeType": "text/html",
+            "headers": [],
+            "body": {"data": encoded},
+        },
+    }
+    api_resource = Mock()
+    api_resource.users().messages().get().execute.return_value = response
+
+    results = SafeGmailSearch.model_construct(
+        api_resource=api_resource
+    )._parse_messages([{"id": "message-1"}])
+
+    assert results[0]["body"] == "Hello Ram,\n- First full point\n- Second full point"
+    assert results[0]["body"] != response["snippet"]

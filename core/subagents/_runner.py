@@ -2,12 +2,15 @@
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Generator
+from typing import Any, Generator, Sequence
 
 from logger import logger
 
 _trace_buffer: ContextVar[list[dict[str, Any]] | None] = ContextVar(
     "subagent_trace_buffer", default=None
+)
+_agent_callbacks: ContextVar[Sequence[Any]] = ContextVar(
+    "subagent_callbacks", default=()
 )
 
 
@@ -20,6 +23,21 @@ def capture_agent_invocations() -> Generator[list[dict[str, Any]], None, None]:
         yield buffer
     finally:
         _trace_buffer.reset(token)
+
+
+@contextmanager
+def use_agent_callbacks(callbacks: Sequence[Any]) -> Generator[None, None, None]:
+    """Make request-scoped callbacks available to the nested LangGraph agent."""
+    token = _agent_callbacks.set(callbacks)
+    try:
+        yield
+    finally:
+        _agent_callbacks.reset(token)
+
+
+def agent_callbacks() -> Sequence[Any]:
+    """Return callbacks inherited from the coordinator's current task."""
+    return _agent_callbacks.get()
 
 
 def _tool_trace(messages: list[Any]) -> list[dict[str, Any]]:
@@ -60,9 +78,15 @@ def run_agent(agent: Any, request: str, name: str, failure: str) -> str:
     """Invoke a LangGraph agent and return its final text or a tool fallback."""
     try:
         logger.info("[%s] %s", name, request[:80])
-        messages = agent.invoke(
-            {"messages": [{"role": "user", "content": request}]}
-        ).get("messages", [])
+        callbacks = list(agent_callbacks())
+        invoke_config = {"callbacks": callbacks} if callbacks else None
+        agent_input = {"messages": [{"role": "user", "content": request}]}
+        result = (
+            agent.invoke(agent_input, invoke_config)
+            if invoke_config
+            else agent.invoke(agent_input)
+        )
+        messages = result.get("messages", [])
         record_agent_invocation(name, request, messages)
         if not messages:
             return "No response generated."

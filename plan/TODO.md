@@ -4,10 +4,31 @@
 
 ---
 
+## Langfuse Trace Integrity (2026-08-16)
+
+- [x] Replace the shared Langfuse callback handler with a request-scoped handler
+- [x] Keep one Heathcliff root trace and add explicit planner, repair, aggregate, and specialist-agent observations
+- [x] Propagate tracing callbacks into every nested specialist LangGraph agent so model calls and actual tool request/results are captured
+- [x] Verify the live trace hierarchy with a non-mutating Langfuse smoke run
+- [x] Non-destructively label the 48 pre-repair orphaned specialist roots as legacy telemetry in Langfuse
+
 ## Type Checking Polish (2026-08-15)
 
 - [x] Replace deprecated `@contextmanager` `Iterator` return annotation with `Generator`
 - [x] Verify Ruff and all tests; remaining `ty` diagnostics are unrelated existing issues
+
+## Streamlit Control Panel (2026-08-15)
+
+- [x] Replace disconnected page scripts with one shared `st.navigation` shell and focused views
+- [x] Add process-local runtime profiles with revisioned agent replacement and enabled-capability filtering
+- [x] Add Command Center streaming timeline, approval controls, and Langfuse trace links
+- [x] Restore the weather-aware Heathcliff greeting in new Command Center conversations
+- [x] Show active memories by default with 50-item pagination and full-width inspection controls
+- [x] Add detailed, full-width analytics sourced from persistent execution events
+- [x] Store intermediary coordinator events with completed conversation turns and show them in transcript accordions
+- [x] Keep the Streamlit UI deliberately default-styled for a future Next.js migration
+- [x] Cover runtime profiles, event persistence, analytics, and focused Streamlit rendering with tests
+- [x] Register callable view renderers with unique Streamlit routes so the control panel does not render blank pages
 
 ## Failed Action-Chain Hardening (2026-08-15)
 
@@ -70,6 +91,12 @@
 - [x] Add the master-name Heathcliff signature and autonomous-system disclaimer to Gmail drafts, Gmail sends, and Telegram messages
 - [x] Render Gmail drafts and sends as clean HTML (headings, bullets, paragraphs, emphasis, links, and signature)
 - [x] Apply Heathcliff's navy-and-gold branded card layout to all outgoing Gmail drafts and sends
+
+## Email Resend Reliability (2026-08-16)
+
+- [x] Read full Gmail HTML bodies when the email agent retrieves a previously sent message
+- [x] Prevent resends from using Gmail's truncated search snippets
+- [x] Require a fresh recipient-specific greeting when sending a prior message to somebody else
 
 ---
 

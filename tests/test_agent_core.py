@@ -109,7 +109,9 @@ def test_invoke_returns_error_when_coordinator_fails(agent):
 def test_stream_does_not_save_until_approval_resumes(agent, memory):
     approval = {"type": "approval_required", "data": {"session_id": "thread"}}
     with patch("core.agent_core.stream_coordinator", return_value=iter([approval])):
-        assert list(agent.stream_invoke("send an email", "thread")) == [approval]
+        events = list(agent.stream_invoke("send an email", "thread"))
+
+    assert events == [approval]
 
     memory.save_turn.assert_not_called()
 
@@ -120,10 +122,43 @@ def test_resume_approval_uses_existing_thread(agent, memory):
     ) as resume:
         assert (
             agent.resume_approval(
-                conversation_id="thread", user_input="send it", approved=True
+                conversation_id="thread",
+                user_input="send it",
+                approved=True,
+                execution_events=[],
             )
             == "Email sent"
         )
 
     assert resume.call_args.kwargs["session_id"] == "thread"
-    memory.save_turn.assert_called_once_with("send it", "Email sent", "thread")
+    memory.save_turn.assert_called_once_with(
+        "send it",
+        "Email sent",
+        "thread",
+        execution_events=[
+            {
+                "type": "approval_resolved",
+                "message": "Action approved",
+                "data": {"modified_input": ""},
+            }
+        ],
+    )
+
+
+def test_stream_saves_intermediate_events_with_completed_turn(agent, memory):
+    events = iter(
+        [
+            {"type": "plan", "message": "One task", "data": {"count": 1}},
+            {"type": "response", "data": "Certainly."},
+            {"type": "complete", "message": "Done", "data": {}},
+        ]
+    )
+    with patch("core.agent_core.stream_coordinator", return_value=events):
+        list(agent.stream_invoke("help", "thread"))
+
+    saved_events = memory.save_turn.call_args.kwargs["execution_events"]
+    assert [event["type"] for event in saved_events] == [
+        "run_started",
+        "plan",
+        "complete",
+    ]

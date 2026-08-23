@@ -155,6 +155,22 @@ class TestSaveTurn:
         assert "message_payload" in metadatas[0]
         assert "message_payload" in metadatas[1]
 
+    def test_execution_events_are_stored_on_assistant_message(self, mgr):
+        events = [{"type": "plan", "message": "Planned one task", "data": {}}]
+        mgr.save_turn("hello", "world", "conv-1", execution_events=events)
+
+        metadatas = mgr._mock_collection.add.call_args[1]["metadatas"]
+        restored = mgr._meta_to_dict("world", metadatas[1], "assistant-id")
+
+        assert restored["execution_events"] == events
+
+    def test_invalid_execution_events_metadata_is_ignored(self, mgr):
+        restored = mgr._meta_to_dict(
+            "world", {"execution_events_json": "not json"}, "assistant-id"
+        )
+
+        assert restored["execution_events"] == []
+
 
 # ---------------------------------------------------------------------------
 # _sort_key
