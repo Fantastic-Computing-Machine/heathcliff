@@ -149,11 +149,12 @@ class TestSaveTurn:
         assert metadatas[0]["conversation_id"] == "conv-42"
         assert metadatas[1]["conversation_id"] == "conv-42"
 
-    def test_message_payload_stored(self, mgr):
+    def test_message_content_is_stored_once_as_document(self, mgr):
         mgr.save_turn("hello", "world", "conv-1")
-        metadatas = mgr._mock_collection.add.call_args[1]["metadatas"]
-        assert "message_payload" in metadatas[0]
-        assert "message_payload" in metadatas[1]
+        call = mgr._mock_collection.add.call_args[1]
+        assert call["documents"] == ["hello", "world"]
+        assert "message_payload" not in call["metadatas"][0]
+        assert "message_payload" not in call["metadatas"][1]
 
     def test_execution_events_are_stored_on_assistant_message(self, mgr):
         events = [{"type": "plan", "message": "Planned one task", "data": {}}]
@@ -170,6 +171,23 @@ class TestSaveTurn:
         )
 
         assert restored["execution_events"] == []
+
+    def test_large_execution_history_is_chunked_and_restored(self, mgr):
+        events = [
+            {"type": "tool_result", "message": f"result-{number}-" + "x" * 500}
+            for number in range(100)
+        ]
+        mgr.save_turn("hello", "long report", "conv-1", execution_events=events)
+
+        metadata = mgr._mock_collection.add.call_args[1]["metadatas"][1]
+        restored = mgr._meta_to_dict("long report", metadata, "assistant-id")
+
+        assert restored["execution_events"] == events
+        assert all(
+            len(value.encode("utf-8")) <= 7000
+            for value in metadata.values()
+            if isinstance(value, str)
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,11 @@ from __future__ import annotations
 import streamlit as st
 
 from core.runtime_profile import DEFAULT_AGENT_NAMES
+from core.subagents.music.tools import (
+    complete_spotify_authorization,
+    spotify_authorization_url,
+    spotify_is_connected,
+)
 from ui.components import page_heading, status_line
 
 
@@ -24,6 +29,38 @@ def _set_form_defaults(profile, revision: int) -> None:
             "enabled_agents": list(profile.enabled_agents),
         }
     )
+
+
+def _render_spotify_connection() -> None:
+    st.subheader("Spotify connection")
+    if spotify_is_connected():
+        st.success("Spotify is connected.")
+        return
+
+    try:
+        authorization_url = spotify_authorization_url()
+    except ValueError as exc:
+        st.info(str(exc))
+        return
+
+    st.caption(
+        "Connect Spotify here before asking Heathcliff to play music. "
+        "The callback page may not load; copy its address and paste it below."
+    )
+    st.link_button("Authorize Spotify", authorization_url)
+    with st.form("spotify_connection", clear_on_submit=True):
+        redirect_url = st.text_input(
+            "Spotify callback URL", type="password", autocomplete="off"
+        )
+        submitted = st.form_submit_button("Save Spotify connection")
+    if submitted:
+        try:
+            complete_spotify_authorization(redirect_url)
+            st.success("Spotify connected. Music requests are ready.")
+        except ValueError as exc:
+            st.error(str(exc))
+        except Exception:
+            st.error("Spotify could not complete authorization. Please try again.")
 
 
 def render() -> None:
@@ -94,3 +131,5 @@ def render() -> None:
         st.session_state.pop("profile_form_revision", None)
         st.success(f"Profile reset as revision {reset_revision}.")
         st.rerun()
+
+    _render_spotify_connection()

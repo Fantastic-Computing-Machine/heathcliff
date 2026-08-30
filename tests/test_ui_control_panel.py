@@ -70,6 +70,56 @@ render()
     assert app.title[0].value == "Command Center"
 
 
+def test_spotify_playback_widget_shows_verified_track_details():
+    app = AppTest.from_string(
+        """
+from ui.views.command_center import _render_spotify_playback
+
+_render_spotify_playback({
+    "status": "Playing",
+    "name": "Victory Anthem",
+    "artist": "Khushi TDT",
+    "album": "Victory Anthem",
+    "cover_url": "https://example.com/cover.jpg",
+    "device": "Aditya's Echo Dot",
+})
+"""
+    ).run()
+
+    assert not app.exception
+    assert any("Victory Anthem" in item.value for item in app.markdown)
+    assert any("Khushi TDT" in item.value for item in app.caption)
+
+
+def test_agent_controls_exposes_nonblocking_spotify_connection():
+    app = AppTest.from_string(
+        """
+import streamlit as st
+from types import SimpleNamespace
+import ui.views.agent_controls as controls
+
+controls.spotify_is_connected = lambda: False
+controls.spotify_authorization_url = lambda: "https://accounts.spotify.com/authorize"
+profile = SimpleNamespace(
+    supervisor_model="model",
+    tool_model="model",
+    temperature=0.2,
+    max_tokens=1024,
+    max_tasks=3,
+    per_task_timeout_ms=10000,
+    max_total_runtime_ms=60000,
+    enabled_agents=("info_agent_tool",),
+)
+runtime = SimpleNamespace(snapshot=lambda: (profile, 1))
+st.session_state["app_runtime"] = runtime
+controls.render()
+"""
+    ).run()
+
+    assert not app.exception
+    assert app.text_input[-1].label == "Spotify callback URL"
+
+
 def test_home_router_uses_view_render_callables():
     source = Path("ui/Home.py").read_text(encoding="utf-8")
 

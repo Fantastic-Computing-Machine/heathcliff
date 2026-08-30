@@ -13,6 +13,10 @@ from langgraph.errors import GraphRecursionError
 from config import Config
 from core.runtime_profile import current_tool_model
 from core.subagents._runner import agent_callbacks, record_agent_invocation
+from core.subagents.info.evidence import (
+    plan_request,
+    run_research_workflow,
+)
 from core.subagents.info.recent_context import recent_context
 from core.subagents.info.tools import get_info_tools
 from logger import logger
@@ -66,25 +70,32 @@ as a thorough answer.
 </output_rules>
 """
 
-_agents: dict[str, Any] = {}
+_agents: dict[tuple[str, tuple[str, ...]], Any] = {}
+_models: dict[str, Any] = {}
 # Compatibility seam for existing integrations and unit tests.
 _agent = None
 
 
-def _build(model_name: str) -> Any:
+def _model(model_name: str) -> Any:
+    if model_name not in _models:
+        _models[model_name] = init_chat_model(
+            api_key=Config.get_ai_api_key(),
+            model=model_name,
+            temperature=0.35,
+            timeout=Config.TIMEOUT_SECONDS,
+            max_retries=Config.MAX_RETRIES,
+        )
+    return _models[model_name]
+
+
+def _build(model_name: str, tool_names: list[str] | None = None) -> Any:
     try:
         tz = pytz.timezone(Config.TZ)
         now_str = datetime.now(tz).strftime("%A, %B %d, %Y")
 
         return create_agent(
-            model=init_chat_model(
-                api_key=Config.get_ai_api_key(),
-                model=model_name,
-                temperature=0.35,
-                timeout=Config.TIMEOUT_SECONDS,
-                max_retries=Config.MAX_RETRIES,
-            ),
-            tools=get_info_tools(),
+            model=_model(model_name),
+            tools=get_info_tools(tool_names),
             system_prompt=_BASE_PROMPT.format(current_date=now_str),
             name="Expert Research Information Agent",
         )
@@ -178,16 +189,34 @@ def info_agent_tool(request: str = "", query: str = "") -> str:
     model_name = current_tool_model(Config.TOOL_MODEL)
     if _agent is not None:
         agent = _agent
-    elif model_name not in _agents:
-        _agents[model_name] = _build(model_name)
-        agent = _agents[model_name]
     else:
-        agent = _agents[model_name]
-    if agent is None:
-        return "Research agent is currently unavailable."
+        agent = None
 
     try:
         logger.info("[info_agent] request=%.80s", effective_request)
+        if _agent is not None:
+            return _invoke_info_agent(agent, effective_request)
+        callbacks = list(agent_callbacks())
+        try:
+            plan = plan_request(_model(model_name), effective_request, callbacks)
+        except Exception as exc:
+            logger.warning("[info_agent] semantic planning failed: %s", exc)
+            plan = None
+
+        if plan is not None and plan.mode == "research":
+            return run_research_workflow(
+                _model(model_name),
+                effective_request,
+                plan,
+                callbacks,
+            )
+        selected_tools = plan.direct_tools if plan is not None else None
+        cache_key = (model_name, tuple(sorted(selected_tools or [])))
+        if cache_key not in _agents:
+            _agents[cache_key] = _build(model_name, selected_tools)
+        agent = _agents[cache_key]
+        if agent is None:
+            return "Research agent is currently unavailable."
         return _invoke_info_agent(agent, effective_request)
     except GraphRecursionError as exc:
         logger.warning("[info_agent] recursion limit reached: %s", exc)

@@ -3,6 +3,8 @@
 
 import json
 import uuid
+import zlib
+from base64 import b64decode, b64encode
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +15,24 @@ from db.base import CONVERSATIONS_COLLECTION, ChromaConnection
 from logger import logger
 
 CHROMA_QUERY_BATCH_SIZE = 200
+CHROMA_METADATA_CHUNK_BYTES = 7000
+
+
+def _execution_events_metadata(events_json: str) -> Dict[str, Any]:
+    """Keep complete execution history below Chroma's per-value byte quota."""
+    if len(events_json.encode("utf-8")) <= CHROMA_METADATA_CHUNK_BYTES:
+        return {"execution_events_json": events_json}
+
+    encoded = b64encode(zlib.compress(events_json.encode("utf-8"))).decode("ascii")
+    chunks = [
+        encoded[index : index + CHROMA_METADATA_CHUNK_BYTES]
+        for index in range(0, len(encoded), CHROMA_METADATA_CHUNK_BYTES)
+    ]
+    return {
+        "execution_events_encoding": "zlib-base64",
+        "execution_events_chunks": len(chunks),
+        **{f"execution_events_{index}": chunk for index, chunk in enumerate(chunks)},
+    }
 
 
 class ConversationMessageRecord(BaseModel):
@@ -71,6 +91,7 @@ class ConversationManager:
             metadata={"order": now.timestamp()},
         )
         events_json = json.dumps(execution_events or [], default=str)
+        events_metadata = _execution_events_metadata(events_json)
         asst_record = ConversationMessageRecord(
             id=asst_id,
             conversation_id=conversation_id,
@@ -96,7 +117,6 @@ class ConversationManager:
                     "message_index": user_record.message_index,
                     "created_at": user_record.created_at,
                     "order": user_record.metadata["order"],
-                    "message_payload": str(user_record.message_payload),
                     "artifact_uris": str(user_record.artifact_uris),
                 },
                 {
@@ -106,11 +126,8 @@ class ConversationManager:
                     "message_index": asst_record.message_index,
                     "created_at": asst_record.created_at,
                     "order": asst_record.metadata["order"],
-                    "message_payload": str(asst_record.message_payload),
                     "artifact_uris": str(asst_record.artifact_uris),
-                    "execution_events_json": asst_record.metadata[
-                        "execution_events_json"
-                    ],
+                    **events_metadata,
                 },
             ],
             ids=[user_id, asst_id],
@@ -445,6 +462,16 @@ class ConversationManager:
     @staticmethod
     def _meta_to_dict(doc: str, meta: Dict[str, Any], msg_id: str) -> Dict[str, Any]:
         raw_events = meta.get("execution_events_json", "[]")
+        if meta.get("execution_events_encoding") == "zlib-base64":
+            try:
+                chunk_count = int(meta.get("execution_events_chunks", 0))
+                encoded = "".join(
+                    str(meta.get(f"execution_events_{index}", ""))
+                    for index in range(chunk_count)
+                )
+                raw_events = zlib.decompress(b64decode(encoded)).decode("utf-8")
+            except Exception:
+                raw_events = "[]"
         try:
             execution_events = json.loads(raw_events)
         except (TypeError, json.JSONDecodeError):

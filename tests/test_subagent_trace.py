@@ -3,6 +3,7 @@ from contextvars import ContextVar
 from core.coordinator_graph import _execute_with_timeout
 from core.subagents._runner import (
     capture_agent_invocations,
+    record_tool_invocation,
     run_agent,
     use_agent_callbacks,
 )
@@ -69,6 +70,18 @@ def test_run_agent_forwards_request_callbacks_to_the_nested_agent():
         assert run_agent(agent, "find x", "test_agent", "failed") == "Complete"
 
     assert agent.config == {"callbacks": [callback]}
+
+
+def test_programmatic_tool_calls_are_recorded_for_research_history():
+    with capture_agent_invocations() as trace:
+        record_tool_invocation("info_agent", "tavily_search", {"query": "x"}, {"ok": True})
+
+    assert trace[0]["agent"] == "info_agent"
+    assert [event["type"] for event in trace[0]["tool_trace"]] == [
+        "tool_call",
+        "tool_result",
+    ]
+    assert trace[0]["tool_trace"][0]["name"] == "tavily_search"
 
 
 def test_timeout_worker_preserves_diagnostic_context():

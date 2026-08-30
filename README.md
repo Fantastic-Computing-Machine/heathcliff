@@ -219,20 +219,21 @@ memory.save_turn(
 
 ## Langfuse Observability
 
-Heathcliff now ships with first-class Langfuse instrumentation:
+Heathcliff uses the Langfuse Python SDK v4 observation model:
 
-1. Set `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and (optionally) `LANGFUSE_HOST` / `LANGFUSE_RELEASE` in `.env`.
+1. Set `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and (optionally) `LANGFUSE_HOST`, `LANGFUSE_RELEASE`, and `LANGFUSE_ENVIRONMENT` in `.env`.
    - If you're on Langfuse Cloud US/EU, also set `LANGFUSE_BASE_URL` to `https://us.cloud.langfuse.com` or `https://cloud.langfuse.com`.
-2. Start the assistant like normal; every agent run creates a Langfuse trace named `heathcliff.agent`, tagged with a configurable `LANGFUSE_USER_ID` (see `LangFuseConf` in `config/config.py`).
+2. Start the assistant like normal; every agent run creates a root `heathcliff.agent` observation with request input/output and propagates its user, session, environment, metadata, version, and tags to child observations.
 3. Gemini prompt/response pairs automatically stream through the Langfuse LangChain callback handler.
-4. Each external tool invocation is logged as a Langfuse event, so you can inspect failures and latency directly in the Langfuse UI.
+4. Each completed request flushes once before returning. Automated checks carry the `test` tag; exclude that tag in Langfuse to hide pytest and live-integration traces.
+5. Check the [Langfuse v4 Migration Assistant](https://cloud.langfuse.com/v4-migration) for project-side evaluator or export work that cannot be inferred from this repository.
 
 ### Troubleshooting Tips
 
 - If no traces appear, run `python -m utils.langfuse_client` or start Heathcliff with `LOG_LEVEL=DEBUG` to confirm the Langfuse callback is registering.
 - Double-check the Langfuse dashboard filters (environment/project) match the `ENVIRONMENT` value in `LangFuseConf` in `config/config.py`.
-- Serverless/text-only sessions may exit before the SDK flushes; add `LANGFUSE_DISABLE_BACKGROUND_FLUSH=false` or keep the process alive for a few seconds.
-- The Langfuse callback handler automatically reads keys from environment variables. Passing `public_key`/`secret_key` directly will fail on newer Langfuse releases, so be sure the env vars are loaded before the process starts.
+- Heathcliff flushes at the end of every request. A logged flush warning indicates a delivery problem without changing the assistant response.
+- The callback handler is created inside the request propagation scope so LangChain children inherit the root attributes.
 
 Disable observability anytime by removing or unsetting the `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` environment variables.
 

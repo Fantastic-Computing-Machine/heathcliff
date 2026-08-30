@@ -29,7 +29,14 @@ from instructions.prompts import (
 )
 from logger import logger
 from utils.errors import AgentMemoryError
-from utils.langfuse_client import get_langfuse_callback_handler, get_langfuse_client
+from utils.langfuse_client import (
+    flush_langfuse,
+    get_langfuse_callback_handler,
+    get_langfuse_client,
+)
+from utils.langfuse_client import (
+    trace_tags as resolve_trace_tags,
+)
 
 INPUT_MAX_LENGTH = 10000
 
@@ -124,7 +131,11 @@ class HeathcliffAgent:
 
     @contextmanager
     def _trace_request(
-        self, user_input: str, run_id: str
+        self,
+        user_input: str,
+        run_id: str,
+        conversation_id: str,
+        requested_tags: Optional[List[str]] = None,
     ) -> Generator[tuple[Any | None, str | None], None, None]:
         """Create a Langfuse root observation when tracing is configured."""
         client = get_langfuse_client()
@@ -132,20 +143,38 @@ class HeathcliffAgent:
             yield None, None
             return
 
+        metadata = {
+            str(key): str(value)[:200]
+            for key, value in self.runtime_profile.metadata(
+                self.runtime_profile_revision
+            ).items()
+        }
+        tags = resolve_trace_tags(requested_tags)
         try:
-            observation_context = client.start_as_current_observation(
-                name=Config.TRACE_NAME,
-                as_type="agent",
-                input={"query": user_input, "run_id": run_id},
-                metadata=self.runtime_profile.metadata(self.runtime_profile_revision),
-            )
-        except Exception as exc:
-            logger.warning("Unable to start Langfuse trace: %s", exc)
-            yield None, None
-            return
-
-        with observation_context as observation:
-            yield observation, client.get_trace_url()
+            with propagate_attributes(
+                trace_name=Config.TRACE_NAME,
+                session_id=conversation_id,
+                user_id=Config.LANGFUSE_USER_ID,
+                environment=Config.ENVIRONMENT,
+                version=Config.LANGFUSE_VERSION,
+                metadata=metadata,
+                tags=tags or None,
+            ):
+                try:
+                    observation_context = client.start_as_current_observation(
+                        name=Config.TRACE_NAME,
+                        as_type="agent",
+                        input={"query": user_input, "run_id": run_id},
+                        metadata=metadata,
+                    )
+                except Exception as exc:
+                    logger.warning("Unable to start Langfuse trace: %s", exc)
+                    yield None, None
+                    return
+                with observation_context as observation:
+                    yield observation, client.get_trace_url()
+        finally:
+            flush_langfuse(client)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -184,6 +213,7 @@ class HeathcliffAgent:
         user_input: str,
         conversation_id: Optional[str] = None,
         additional_callbacks: Optional[List[Any]] = None,
+        trace_tags: Optional[List[str]] = None,
     ) -> str:
         """
         Process user input using LangGraph ReAct agent.
@@ -229,27 +259,20 @@ class HeathcliffAgent:
             )
             messages = chat_history + [HumanMessage(content=formatted_input)]
 
-            with self._trace_request(user_input, run_id) as (observation, _):
-                with propagate_attributes(
+            with self._trace_request(
+                user_input, run_id, conversation_id, trace_tags
+            ) as (observation, _):
+                callbacks = self._build_callbacks(additional_callbacks)
+                response = invoke_coordinator(
+                    compiled_graph=self.coordinator,
+                    user_input=user_input,
                     session_id=conversation_id,
-                    user_id=Config.LANGFUSE_USER_ID,
-                    metadata=self.runtime_profile.metadata(
-                        self.runtime_profile_revision
-                    ),
-                ):
-                    callbacks = self._build_callbacks(additional_callbacks)
-                    response = invoke_coordinator(
-                        compiled_graph=self.coordinator,
-                        user_input=user_input,
-                        session_id=conversation_id,
-                        messages=messages,
-                        callbacks=callbacks,
-                    )
-                    response = (
-                        response or "I encountered an error processing your request."
-                    )
-                    if observation is not None:
-                        observation.update(output={"response": response})
+                    messages=messages,
+                    callbacks=callbacks,
+                )
+                response = response or "I encountered an error processing your request."
+                if observation is not None:
+                    observation.update(output={"response": response})
 
             self.memory_manager.save_turn(user_input, response, conversation_id)
             logger.info("Response: '%.50s...'", response)
@@ -268,6 +291,7 @@ class HeathcliffAgent:
         user_input: str,
         conversation_id: Optional[str] = None,
         additional_callbacks: Optional[List[Any]] = None,
+        trace_tags: Optional[List[str]] = None,
     ):
         """
         Stream agent execution with status updates.
@@ -343,37 +367,42 @@ class HeathcliffAgent:
             final_response = ""
             execution_events: List[Dict[str, Any]] = []
             approval_pending = False
-            callbacks = self._build_callbacks(additional_callbacks)
 
-            with self._trace_request(user_input, run_id) as (observation, trace_url):
-                with propagate_attributes(
-                    session_id=conversation_id,
-                    user_id=Config.LANGFUSE_USER_ID,
-                    metadata=self.runtime_profile.metadata(
-                        self.runtime_profile_revision
-                    ),
-                ):
-                    event_stream = iter(
-                        stream_coordinator(
-                            compiled_graph=self.coordinator,
-                            user_input=user_input,
-                            session_id=conversation_id,
-                            messages=messages,
-                            callbacks=callbacks,
-                        )
+            with self._trace_request(
+                user_input, run_id, conversation_id, trace_tags
+            ) as (observation, trace_url):
+                callbacks = self._build_callbacks(additional_callbacks)
+                event_stream = iter(
+                    stream_coordinator(
+                        compiled_graph=self.coordinator,
+                        user_input=user_input,
+                        session_id=conversation_id,
+                        messages=messages,
+                        callbacks=callbacks,
                     )
-                    first_event = next(event_stream, None)
-                    if (
-                        isinstance(first_event, dict)
-                        and first_event.get("type") == "approval_required"
-                    ):
-                        # Preserve the established interrupt contract for callers
-                        # that only need to render an immediate approval prompt.
-                        approval_pending = True
-                        execution_events.append(dict(first_event))
-                        yield first_event
-                    else:
-                        yield {
+                )
+                first_event = next(event_stream, None)
+                if (
+                    isinstance(first_event, dict)
+                    and first_event.get("type") == "approval_required"
+                ):
+                    # Preserve the established interrupt contract for callers
+                    # that only need to render an immediate approval prompt.
+                    approval_pending = True
+                    execution_events.append(dict(first_event))
+                    yield first_event
+                else:
+                    yield {
+                        "type": "run_started",
+                        "message": "Run started",
+                        "data": {
+                            "run_id": run_id,
+                            "profile_revision": self.runtime_profile_revision,
+                            "trace_url": trace_url,
+                        },
+                    }
+                    execution_events.append(
+                        {
                             "type": "run_started",
                             "message": "Run started",
                             "data": {
@@ -382,50 +411,38 @@ class HeathcliffAgent:
                                 "trace_url": trace_url,
                             },
                         }
+                    )
+                for event in (
+                    ()
+                    if approval_pending
+                    else chain(
+                        [first_event] if first_event is not None else [],
+                        event_stream,
+                    )
+                ):
+                    enriched_event = dict(event)
+                    enriched_event["run_id"] = run_id
+                    enriched_event["profile_revision"] = self.runtime_profile_revision
+                    enriched_event["trace_url"] = trace_url
+                    yield enriched_event
+
+                    event_type = event.get("type", "")
+                    if event_type != "response":
                         execution_events.append(
                             {
-                                "type": "run_started",
-                                "message": "Run started",
-                                "data": {
-                                    "run_id": run_id,
-                                    "profile_revision": self.runtime_profile_revision,
-                                    "trace_url": trace_url,
-                                },
+                                "type": event_type,
+                                "message": str(event.get("message", "")),
+                                "data": event.get("data", {}),
                             }
                         )
-                    for event in (
-                        ()
-                        if approval_pending
-                        else chain(
-                            [first_event] if first_event is not None else [],
-                            event_stream,
-                        )
-                    ):
-                        enriched_event = dict(event)
-                        enriched_event["run_id"] = run_id
-                        enriched_event["profile_revision"] = (
-                            self.runtime_profile_revision
-                        )
-                        enriched_event["trace_url"] = trace_url
-                        yield enriched_event
-
-                        event_type = event.get("type", "")
-                        if event_type != "response":
-                            execution_events.append(
-                                {
-                                    "type": event_type,
-                                    "message": str(event.get("message", "")),
-                                    "data": event.get("data", {}),
-                                }
-                            )
-                        if event_type == "response":
-                            final_response = event.get("data", "")
-                        elif event_type == "approval_required":
-                            approval_pending = True
-                        elif event_type == "complete":
-                            event_response = event.get("data", {}).get("response", "")
-                            if event_response:
-                                final_response = event_response
+                    if event_type == "response":
+                        final_response = event.get("data", "")
+                    elif event_type == "approval_required":
+                        approval_pending = True
+                    elif event_type == "complete":
+                        event_response = event.get("data", {}).get("response", "")
+                        if event_response:
+                            final_response = event_response
 
                 if observation is not None and final_response:
                     observation.update(output={"response": final_response})
@@ -474,26 +491,26 @@ class HeathcliffAgent:
         approved: bool,
         modified_input: Optional[str] = None,
         execution_events: Optional[List[Dict[str, Any]]] = None,
+        trace_tags: Optional[List[str]] = None,
     ) -> str:
         """Resume the coordinator action paused for Streamlit approval."""
         if self.memory_manager is None:
             raise AgentMemoryError("MemoryManager not initialised")
 
         run_id = str(uuid.uuid4())
-        with self._trace_request(user_input, run_id) as (observation, _):
-            with propagate_attributes(
-                session_id=conversation_id, user_id=Config.LANGFUSE_USER_ID
-            ):
-                callbacks = self._build_callbacks()
-                response = resume_coordinator(
-                    compiled_graph=self.coordinator,
-                    session_id=conversation_id,
-                    approved=approved,
-                    modified_input=modified_input,
-                    callbacks=callbacks,
-                )
-                if observation is not None:
-                    observation.update(output={"response": response})
+        with self._trace_request(
+            user_input, run_id, conversation_id, trace_tags
+        ) as (observation, _):
+            callbacks = self._build_callbacks()
+            response = resume_coordinator(
+                compiled_graph=self.coordinator,
+                session_id=conversation_id,
+                approved=approved,
+                modified_input=modified_input,
+                callbacks=callbacks,
+            )
+            if observation is not None:
+                observation.update(output={"response": response})
 
         response = response or "I encountered an error processing your request."
         resolution_event = {

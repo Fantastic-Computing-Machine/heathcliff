@@ -15,6 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core.subagents._runner import capture_agent_invocations
 from main import HeathcliffAssistant
 
+TRACE_TAGS = ["test", "live-integration"]
+
 READ_ONLY_QUERIES = [
     "What is the weather in Jersey City right now?",
     "Give me the three latest technology headlines, with their sources.",
@@ -57,7 +59,9 @@ def _run_query(
 
     with capture_agent_invocations() as subagent_calls:
         for event in assistant.agent.stream_invoke(
-            query, conversation_id=conversation_id
+            query,
+            conversation_id=conversation_id,
+            trace_tags=TRACE_TAGS,
         ):
             event = _jsonable(event)
             events.append(event)
@@ -73,6 +77,7 @@ def _run_query(
                 conversation_id=conversation_id,
                 user_input=query,
                 approved=False,
+                trace_tags=TRACE_TAGS,
             )
 
     completed = datetime.now(UTC)
@@ -95,13 +100,20 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path)
     parser.add_argument("--include-approvals", action="store_true")
+    parser.add_argument(
+        "--query",
+        action="append",
+        help="Run only this query; repeat the option for multiple queries.",
+    )
     args = parser.parse_args()
 
     output = args.output or Path("artifacts") / (
         "live-integration-" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".jsonl"
     )
     output.parent.mkdir(parents=True, exist_ok=True)
-    queries = READ_ONLY_QUERIES + (APPROVAL_QUERIES if args.include_approvals else [])
+    queries = args.query or (
+        READ_ONLY_QUERIES + (APPROVAL_QUERIES if args.include_approvals else [])
+    )
     assistant = HeathcliffAssistant(enable_audio=False)
 
     with output.open("w", encoding="utf-8") as handle:

@@ -4,6 +4,15 @@
 
 ---
 
+## Spotify Playback Safety and Inline State (2026-08-23)
+
+- [x] Prevent explicit device requests from falling back to another Spotify device
+- [x] Replace natural-language field parsing with typed title, artist, and device tool arguments
+- [x] Add true queue resume without searching for a new track
+- [x] Reject unrelated zero-confidence Spotify search results before playback
+- [x] Show verified cover, track, artist, album, status, and device inline after music turns
+- [x] Add regressions and verify all 349 tests
+
 ## Langfuse Trace Integrity (2026-08-16)
 
 - [x] Replace the shared Langfuse callback handler with a request-scoped handler
@@ -29,6 +38,16 @@
 - [x] Keep the Streamlit UI deliberately default-styled for a future Next.js migration
 - [x] Cover runtime profiles, event persistence, analytics, and focused Streamlit rendering with tests
 - [x] Register callable view renderers with unique Streamlit routes so the control panel does not render blank pages
+
+## Spotify Reliability (2026-08-23)
+
+- [x] Move Spotify authorization out of task-worker terminal input and into Agent Controls
+- [x] Keep Spotify playback in-process so timed-out tasks cannot act later
+- [x] Prevent the planner from selecting Spotify without an explicit playback request
+- [x] Search Spotify's public catalogue before selecting open-ended music
+- [x] Play public playlists and set an explicitly requested Spotify volume
+- [x] Ignore unavailable Spotify API entries and keep public music requests in one specialist loop
+- [x] Gracefully report Spotify devices that disallow remote volume control
 
 ## Failed Action-Chain Hardening (2026-08-15)
 

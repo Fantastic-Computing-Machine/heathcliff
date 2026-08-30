@@ -79,6 +79,34 @@ def _base_state():
 
 
 class TestCoordinatorStability:
+    def test_planner_keeps_spotify_work_in_one_specialist_task(self):
+        from core.coordinator_graph import _PLAN_SYSTEM
+
+        assert "music_agent_tool task" in _PLAN_SYSTEM
+        assert "Do not split one Spotify request" in _PLAN_SYSTEM
+
+    def test_single_specialist_task_preserves_original_user_constraints(self, registry):
+        from core.coordinator_graph import _plan
+        from core.middleware import create_execution_budget
+
+        original = "Analyze technical, economic, community, and policy impacts."
+        llm = _make_llm(
+            [
+                {
+                    "goal": "Analyze the impacts.",
+                    "target_agent": "info_agent_tool",
+                    "depends_on": [],
+                    "parallelizable": False,
+                }
+            ]
+        )
+        state = _base_state()
+        state.update({"user_input": original, "session_id": "preserve-request"})
+
+        result = _plan(state, registry, llm, create_execution_budget())
+
+        assert original in result["task_specs"][0]["goal"]
+
     def test_dependency_chain_invoke_no_crash(self, registry):
         from core.coordinator_graph import build_coordinator_graph, invoke_coordinator
 
@@ -295,6 +323,30 @@ class TestCoordinatorStability:
         )
         result = _execute_single_task(
             TaskSpec(goal="Send an email", target_agent="email_agent_tool"),
+            registry,
+            callbacks=(),
+            timeout_ms=1,
+        )
+
+        assert result.status == TaskStatus.COMPLETED
+
+    def test_music_playback_does_not_outlive_its_timeout(self, registry):
+        from core.coordinator_graph import _execute_single_task
+
+        def slow_play(request="", **kwargs):
+            time.sleep(0.03)
+            return "Music started"
+
+        registry.register(
+            AgentDescriptor(
+                name="music_agent_tool",
+                capabilities=["music"],
+                invoke_fn=slow_play,
+                sensitive_actions=["spotify_playback"],
+            )
+        )
+        result = _execute_single_task(
+            TaskSpec(goal="Play music", target_agent="music_agent_tool"),
             registry,
             callbacks=(),
             timeout_ms=1,

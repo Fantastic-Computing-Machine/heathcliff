@@ -79,6 +79,12 @@ must declare that task in "depends_on". For example, researching a topic and
 emailing a named contact without a known address requires research, contact
 lookup, then an email task that depends on both results.
 
+When a request's external work belongs to one specialist, create one end-to-end
+task for that specialist. In particular, delegate a Spotify request as one
+music_agent_tool task with the full intent: its internal tool loop handles
+catalogue search, playlist selection, playback, device targeting, and volume.
+Do not split one Spotify request into separate music tasks.
+
 Available agents and their capabilities:
 {agent_descriptions}
 
@@ -333,8 +339,15 @@ def _plan(
     task_specs: List[Dict[str, Any]] = []
 
     for idx, item in enumerate(planner_tasks):
+        goal = item.goal
+        if len(planner_tasks) == 1:
+            goal = (
+                f"{item.goal}\n\n"
+                "Original user request (preserve every constraint):\n"
+                f"{user_input}"
+            )
         spec = TaskSpec(
-            goal=item.goal,
+            goal=goal,
             target_agent=item.target_agent,
             depends_on=[
                 task_specs[dep_index]["task_id"]
@@ -604,11 +617,12 @@ def _execute_single_task(
                     latency_ms=int((time.monotonic() - start) * 1000),
                 )
 
-        # A Python worker thread cannot be killed. Never allow an approved
-        # side-effecting agent to outlive the coordinator after a timeout.
+        # A Python worker thread cannot be killed. Never allow a side-effecting
+        # agent to outlive the coordinator after a timeout.
         result = (
             invoke()
-            if requires_approval(descriptor.name, spec.goal)
+            if descriptor.sensitive_actions
+            or requires_approval(descriptor.name, spec.goal)
             else _execute_with_timeout(invoke, timeout_ms=timeout_ms)
         )
     except TimeoutError:

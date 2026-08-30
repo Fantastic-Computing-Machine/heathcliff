@@ -1,7 +1,51 @@
 # ABOUTME: Langfuse request-scoping and coordinator-step instrumentation tests.
 
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+
+def test_v4_client_receives_process_environment_and_release():
+    from config import Config
+    from utils.langfuse_client import _build_client_kwargs
+
+    with (
+        patch.object(Config, "ENVIRONMENT", "local-dev"),
+        patch.object(Config, "LANGFUSE_RELEASE", "release-1"),
+    ):
+        kwargs = _build_client_kwargs()
+
+    assert kwargs["environment"] == "local-dev"
+    assert kwargs["release"] == "release-1"
+
+
+def test_trace_tags_mark_pytest_and_merge_without_duplicates():
+    from utils.langfuse_client import trace_tags
+
+    with patch.dict("os.environ", {"PYTEST_CURRENT_TEST": "test_x"}, clear=True):
+        assert trace_tags(["test", "live-integration"]) == [
+            "test",
+            "live-integration",
+            "pytest",
+        ]
+
+
+def test_normal_trace_tags_do_not_include_test():
+    from utils.langfuse_client import trace_tags
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert trace_tags(["manual"]) == ["manual"]
+
+
+def test_flush_failure_is_non_fatal():
+    from utils.langfuse_client import flush_langfuse
+
+    client = Mock()
+    client.flush.side_effect = RuntimeError("offline")
+
+    flush_langfuse(client)
+
+    client.flush.assert_called_once_with()
 
 
 def test_callback_handler_is_request_scoped():
@@ -88,3 +132,65 @@ def test_outer_dispatch_skips_the_langfuse_callback():
         assert _outer_task_callbacks([langfuse_callback, approval_callback]) == (
             approval_callback,
         )
+
+
+def test_request_attributes_wrap_root_callbacks_and_flush():
+    from config import Config
+    from core.agent_core import HeathcliffAgent
+
+    events = []
+    observation = Mock()
+    client = Mock()
+    client.get_trace_url.return_value = "https://trace"
+
+    @contextmanager
+    def observation_context():
+        events.append("root-enter")
+        yield observation
+        events.append("root-exit")
+
+    @contextmanager
+    def propagation_context(**kwargs):
+        events.append(("propagate-enter", kwargs))
+        yield
+        events.append("propagate-exit")
+
+    def start_observation(**kwargs):
+        events.append(("root-create", kwargs))
+        return observation_context()
+
+    client.start_as_current_observation.side_effect = start_observation
+    agent = object.__new__(HeathcliffAgent)
+    agent.runtime_profile = SimpleNamespace(
+        metadata=lambda revision: {"profile_revision": revision}
+    )
+    agent.runtime_profile_revision = 7
+
+    with (
+        patch("core.agent_core.get_langfuse_client", return_value=client),
+        patch("core.agent_core.propagate_attributes", propagation_context),
+        patch("core.agent_core.resolve_trace_tags", return_value=["test"]),
+        patch("core.agent_core.flush_langfuse") as flush,
+        agent._trace_request("hello", "run-1", "session-1", ["test"]) as current,
+    ):
+        events.append("request-body")
+        assert current == (observation, "https://trace")
+
+    propagation = events[0][1]
+    assert propagation == {
+        "trace_name": Config.TRACE_NAME,
+        "session_id": "session-1",
+        "user_id": Config.LANGFUSE_USER_ID,
+        "environment": Config.ENVIRONMENT,
+        "version": Config.LANGFUSE_VERSION,
+        "metadata": {"profile_revision": "7"},
+        "tags": ["test"],
+    }
+    assert events[1][0] == "root-create"
+    assert events[2:] == [
+        "root-enter",
+        "request-body",
+        "root-exit",
+        "propagate-exit",
+    ]
+    flush.assert_called_once_with(client)

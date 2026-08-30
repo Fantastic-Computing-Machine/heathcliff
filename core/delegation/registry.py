@@ -104,9 +104,20 @@ def build_default_registry(
         ),
         AgentDescriptor(
             name="music_agent_tool",
-            capabilities=["music", "spotify", "play", "song", "track", "playlist"],
+            capabilities=[
+                "music",
+                "spotify",
+                "catalogue search",
+                "play",
+                "song",
+                "track",
+                "playlist",
+                "album",
+                "artist",
+                "volume",
+            ],
             invoke_fn=music_agent_tool,
-            sensitive_actions=[],
+            sensitive_actions=["spotify_playback"],
         ),
         AgentDescriptor(
             name="email_agent_tool",

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -35,6 +36,21 @@ _duck_tool: Optional[Any] = None
 _wikidata_tool: Optional[Any] = None
 _stackexchange_tool: Optional[Any] = None
 _nasa_tools: Optional[Dict[str, Any]] = None
+_tavily_search_tool: Optional[Any] = None
+_tavily_extract_tool: Optional[Any] = None
+
+
+@dataclass(frozen=True)
+class SearchOutcome:
+    """Typed result so provider failures cannot masquerade as search results."""
+
+    provider: str
+    content: str = ""
+    error: str = ""
+
+    @property
+    def succeeded(self) -> bool:
+        return bool(self.content) and not self.error
 
 
 def _init_google_tool(config) -> Optional[Any]:
@@ -186,7 +202,9 @@ def _search_wikipedia(query: str) -> str:
     return "\n".join(lines)
 
 
-def _dispatch_search(provider: str, query: str, max_results: int, config) -> str:
+def _dispatch_search(
+    provider: str, query: str, max_results: int, config
+) -> SearchOutcome:
     """Execute the configured search provider via LangChain tools."""
 
     provider = (provider or "").lower()
@@ -194,22 +212,24 @@ def _dispatch_search(provider: str, query: str, max_results: int, config) -> str
     if provider == "google":
         google_tool = _init_google_tool(config)
         if not google_tool:
-            return ""
+            return SearchOutcome(provider="google", error="not configured")
         try:
-            return _format_search_result(google_tool.run(query))
+            content = _format_search_result(google_tool.run(query))
+            return SearchOutcome(provider="google", content=content)
         except Exception as exc:  # pragma: no cover - network errors
-            return f"Google search error: {exc}"
+            return SearchOutcome(provider="google", error=str(exc))
 
     if provider == "duckduckgo":
         duck_tool = _init_duck_tool()
         if not duck_tool:
-            return ""
+            return SearchOutcome(provider="duckduckgo", error="unavailable")
         try:
-            return _format_search_result(duck_tool.run(query))
+            content = _format_search_result(duck_tool.run(query))
+            return SearchOutcome(provider="duckduckgo", content=content)
         except Exception as exc:  # pragma: no cover - network errors
-            return f"DuckDuckGo search error: {exc}"
+            return SearchOutcome(provider="duckduckgo", error=str(exc))
 
-    return ""
+    return SearchOutcome(provider=provider, error="unknown provider")
 
 
 def _truncate(text: str, max_chars: int = 260) -> str:
@@ -414,28 +434,22 @@ def search_web(query: str, provider: Optional[str] = None) -> str:
         primary_provider = provider or "duckduckgo"
         response = _dispatch_search(primary_provider, query, max_results, config)
 
-        if response:
-            _capture_recent_result("search_web", response)
-            return response
+        if response.succeeded:
+            _capture_recent_result("search_web", response.content)
+            return response.content
 
+        errors = [f"{response.provider}: {response.error}"]
         for fallback in ["google"]:
             if fallback != primary_provider:
                 fallback_response = _dispatch_search(
                     fallback, query, max_results, config
                 )
-                if fallback_response:
-                    _capture_recent_result("search_web", fallback_response)
-                    return fallback_response
+                if fallback_response.succeeded:
+                    _capture_recent_result("search_web", fallback_response.content)
+                    return fallback_response.content
+                errors.append(f"{fallback_response.provider}: {fallback_response.error}")
 
-        try:
-            wiki_response = _search_wikipedia(query)
-            if wiki_response:
-                _capture_recent_result("search_web", wiki_response)
-                return wiki_response
-        except requests.RequestException as exc:
-            logger.warning("Wikipedia fallback failed for '%s': %s", query, exc)
-
-        return f"No search results found for: {query}"
+        return f"Web search failed for {query}: {'; '.join(errors)}"
 
     except Exception as exc:
         return f"Error searching web: {str(exc)}"
@@ -751,24 +765,85 @@ def yt_search_tool() -> List[Any]:
         return []
 
 
-def tavily_tools() -> List[Any]:
-    """Return Tavily search and extraction tools when configured."""
+def _init_tavily_tools() -> tuple[Optional[Any], Optional[Any]]:
+    """Build the official Tavily clients once without exposing credentials."""
+    global _tavily_search_tool, _tavily_extract_tool
+
     if not Config.TAVILY_API_KEY:
-        return []
+        return None, None
 
     try:
         from langchain_tavily import TavilyExtract, TavilySearch
 
-        return [
-            TavilySearch(max_results=5, topic="general"),
-            TavilyExtract(extract_depth="basic"),
-        ]
+        if _tavily_search_tool is None:
+            _tavily_search_tool = TavilySearch(
+                tavily_api_key=Config.TAVILY_API_KEY,
+                max_results=5,
+                search_depth="basic",
+                topic="general",
+            )
+        if _tavily_extract_tool is None:
+            _tavily_extract_tool = TavilyExtract(
+                tavily_api_key=Config.TAVILY_API_KEY,
+                extract_depth="basic",
+                format="markdown",
+            )
+        return _tavily_search_tool, _tavily_extract_tool
     except Exception as exc:
         logger.warning("Tavily tools unavailable: %s", exc)
+        return None, None
+
+
+@tool
+def tavily_search(query: str) -> Dict[str, Any]:
+    """Search the live web with Tavily and return structured source results."""
+    search_tool, _ = _init_tavily_tools()
+    if search_tool is None:
+        return {"ok": False, "provider": "tavily", "error": "not configured"}
+    try:
+        raw = search_tool.invoke({"query": query})
+        results = raw.get("results", []) if isinstance(raw, dict) else []
+        if results:
+            result = {"ok": True, "provider": "tavily", "results": results}
+            _capture_recent_result("tavily_search", _format_search_result(result))
+            return result
+        return {"ok": False, "provider": "tavily", "error": "no results"}
+    except Exception as exc:
+        logger.warning("Tavily search failed for %r: %s", query, exc)
+        return {"ok": False, "provider": "tavily", "error": str(exc)}
+
+
+@tool
+def tavily_extract(urls: List[str], query: str = "") -> Dict[str, Any]:
+    """Extract readable source content from one or more URLs with Tavily."""
+    _, extract_tool = _init_tavily_tools()
+    if extract_tool is None:
+        return {"ok": False, "provider": "tavily", "error": "not configured"}
+    try:
+        args: Dict[str, Any] = {"urls": urls}
+        if query:
+            args["query"] = query
+        raw = extract_tool.invoke(args)
+        results = raw.get("results", []) if isinstance(raw, dict) else []
+        if results:
+            result = {"ok": True, "provider": "tavily", "results": results}
+            _capture_recent_result("tavily_extract", _format_search_result(result))
+            return result
+        error = raw.get("error", "no results") if isinstance(raw, dict) else "no results"
+        return {"ok": False, "provider": "tavily", "error": str(error)}
+    except Exception as exc:
+        logger.warning("Tavily extraction failed: %s", exc)
+        return {"ok": False, "provider": "tavily", "error": str(exc)}
+
+
+def tavily_tools() -> List[Any]:
+    """Return traced Tavily wrappers when configured."""
+    if not Config.TAVILY_API_KEY:
         return []
+    return [tavily_search, tavily_extract]
 
 
-def get_info_tools() -> List[Any]:
+def get_info_tools(names: Optional[List[str]] = None) -> List[Any]:
     """
     Get all info tools as a list for agent registration.
 
@@ -792,4 +867,7 @@ def get_info_tools() -> List[Any]:
     tools.extend(finance_news_tool())
     tools.extend(yt_search_tool())
     tools.extend(tavily_tools())
-    return tools
+    if names is None:
+        return tools
+    selected = set(names)
+    return [tool for tool in tools if tool.name in selected]

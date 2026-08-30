@@ -8,6 +8,7 @@ from typing import Any
 import streamlit as st
 
 from config import Config
+from core.subagents.music.tools import get_current_playback_snapshot
 from ui.components import event_row, page_heading, status_line
 from utils.heathcliff_greetings import generate_greeting
 
@@ -87,6 +88,18 @@ def _render_run_timeline() -> None:
         st.markdown(event_row(event))
 
 
+def _render_spotify_playback(playback: dict[str, Any]) -> None:
+    """Render compact, verified Spotify state beneath its assistant turn."""
+    cover, details = st.columns([1, 6], vertical_alignment="center")
+    with cover:
+        if playback.get("cover_url"):
+            st.image(playback["cover_url"], width=88)
+    with details:
+        st.caption(f"Spotify · {playback['status']} on {playback['device']}")
+        st.markdown(f"**{playback['name']}**")
+        st.caption(f"{playback['artist']} · {playback['album']}")
+
+
 def render() -> None:
     runtime = st.session_state["app_runtime"]
     _ensure_session()
@@ -118,6 +131,8 @@ def render() -> None:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+            if message.get("spotify_playback"):
+                _render_spotify_playback(message["spotify_playback"])
 
     if not st.session_state.messages:
         with st.chat_message("assistant"):
@@ -139,6 +154,7 @@ def render() -> None:
     with st.chat_message("assistant"):
         response_box = st.empty()
         final_response = ""
+        music_used = False
         with st.status("Heathcliff is working", expanded=True) as status:
             try:
                 for event in handle.agent.stream_invoke(
@@ -157,6 +173,10 @@ def render() -> None:
                         )
                     elif event_type == "subtask_complete":
                         st.write(event.get("message", "Subtask complete"))
+                        music_used = (
+                            music_used
+                            or event.get("data", {}).get("agent") == "music_agent_tool"
+                        )
                     elif event_type == "approval_required":
                         pending = dict(event.get("data", {}))
                         pending["user_input"] = prompt
@@ -178,9 +198,16 @@ def render() -> None:
                     response_box.info("The proposed action is ready for your review.")
                 elif final_response:
                     response_box.markdown(final_response)
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": final_response}
-                    )
+                    assistant_message = {
+                        "role": "assistant",
+                        "content": final_response,
+                    }
+                    if music_used:
+                        playback = get_current_playback_snapshot()
+                        if playback:
+                            assistant_message["spotify_playback"] = playback
+                            _render_spotify_playback(playback)
+                    st.session_state.messages.append(assistant_message)
                     status.update(label="Complete", state="complete")
                 else:
                     response_box.error("Heathcliff did not return a response.")

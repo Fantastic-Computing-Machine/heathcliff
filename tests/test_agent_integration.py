@@ -232,6 +232,9 @@ class TestPromptRegression:
     def test_prompt_mentions_music_agent_tool(self, system_prompt):
         assert "music_agent_tool" in system_prompt
 
+    def test_prompt_forbids_unsolicited_playback(self, system_prompt):
+        assert "unless the user explicitly asks" in system_prompt
+
     def test_prompt_mentions_email_agent_tool(self, system_prompt):
         assert "email_agent_tool" in system_prompt
 

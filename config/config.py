@@ -167,6 +167,7 @@ class LangFuseConf:
     LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
     LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
     LANGFUSE_RELEASE = os.getenv("LANGFUSE_RELEASE")
+    LANGFUSE_VERSION = os.getenv("LANGFUSE_VERSION")
 
     TRACE_NAME = "heathcliff.agent"
     LANGFUSE_USER_ID = "heathcliff_user"
@@ -236,7 +237,7 @@ class CoordinatorConf:
     """Budget and execution limits for the coordinator graph."""
 
     MAX_TASKS_PER_REQUEST = int(os.getenv("COORDINATOR_MAX_TASKS", "10"))
-    PER_TASK_TIMEOUT_MS = int(os.getenv("COORDINATOR_TASK_TIMEOUT_MS", "60000"))
+    PER_TASK_TIMEOUT_MS = int(os.getenv("COORDINATOR_TASK_TIMEOUT_MS", "120000"))
     MAX_TOTAL_RUNTIME_MS = int(os.getenv("COORDINATOR_MAX_RUNTIME_MS", "300000"))
 
 

@@ -2,10 +2,38 @@
 
 This file serves as the **working memory** for all coding agents on the Heathcliff project. It tracks discoveries, issues, and recent activity. For complete project documentation, see `AGENTS.md`.
 
+## 2026-08-23 Spotify Playback Safety and Inline State
+
+- A live request for playback on Pixel incorrectly started a playlist on the Echo Dot before asking whether fallback was acceptable. The nested music model had omitted the device from its playback call, allowing the playback tool to select the first available device.
+- Spotify playback tools now require separate typed music, artist, and device fields. Device resolution happens before any side effect, and an unavailable explicit device returns the available choices without playback. Natural-language keyword parsing is not used for intent or field extraction.
+- The previous music toolset had no resume operation, so a resume request was sent through track search and Spotify's unrelated first result, `Victory Anthem`, was played. A dedicated `resume_playback` tool now resumes the existing queue without a search. Track playback also refuses every zero-overlap catalogue result.
+- Command Center music turns now include a compact inline Spotify widget populated from the live Spotify playback response: cover, verified title, artist, album, play/pause state, and device. The metadata is stored with that browser-session message rather than inferred from assistant prose.
+- Verification: Ruff and `git diff --check` passed; all 349 tests passed. `uvx ty check` remains at the same 25 pre-existing diagnostics with none introduced by this work.
+
 ## 2026-08-23 Streamlit Blank-Page Repair
 
 - The control-panel router had registered each view's source file with `st.Page`, but the files intentionally only define `render()` and therefore displayed no elements when Streamlit executed them. The page could load with an empty body.
 - `ui/Home.py` now registers the `render` callables directly and assigns unique URL paths to every non-default page (callables otherwise all infer the conflicting `render` path). The default route renders Command Center. Verified with Streamlit `AppTest` against the real entry point and the full suite (`332 passed`).
+
+## 2026-08-23 Spotify OAuth and Stale Playback Repair
+
+- Removed terminal `input()` from the Spotify tool flow. A missing cached token now returns an immediate connection message; authorization is completed from Agent Controls by pasting the existing local callback URL into a password-type field.
+- Music playback is registered as a side-effecting operation and runs in-process, so the coordinator cannot report a timeout while an unkillable worker later starts old playback. The planner is also explicitly prohibited from selecting Spotify merely to set a mood.
+- Verification: focused regression tests and the full suite passed (`338 passed`). `uvx ty check` still reports the same 25 pre-existing diagnostics, with none introduced by this change.
+
+## 2026-08-23 Spotify Catalogue Search and Volume Control
+
+- The music specialist previously had only track playback and personal-playlist lookup. A request to find a good public playlist therefore chose the personal-playlist tool and failed after the planner had already produced the correct search-then-play shape.
+- Added public Spotify catalogue search across tracks, playlists, albums, and artists; public-playlist playback; and 0–100 volume control. The music prompt directs the model to search before selecting open-ended music and to apply requested volume only after playback succeeds.
+- An empty catalogue result permits one model-directed retry for an obvious spelling correction (for example, the logged `Hinfi` typo), without hard-coded keyword routing.
+- Verification: all 340 tests passed. `uvx ty check` remains at the same 25 unrelated diagnostics.
+
+## 2026-08-23 Spotify Live-Run Hardening
+
+- A real public-catalogue response included unavailable `null` entries; the catalogue formatter dereferenced one and failed the whole music task. Spotify result/device lists now share a defensive extractor that ignores null and malformed entries.
+- The coordinator had decomposed one playlist request into separate search, volume, and play calls, which let volume execute before playback and made dependent work fail. The planner now delegates one end-to-end Spotify request to the music specialist's internal tool loop.
+- The live Pixel device returned Spotify's `VOLUME_CONTROL_DISALLOW` response. This is a device/API limitation, not an authentication failure. Volume requests now return a concise instruction to adjust the device directly and do not crash or block playback.
+- Verification: all 343 tests passed; `git diff --check` passed. `uvx ty check` still reports the same 25 unrelated diagnostics.
 
 ## 2026-08-16 Langfuse Trace Integrity
 

@@ -74,6 +74,31 @@ def record_agent_invocation(name: str, request: str, messages: list[Any]) -> Non
         )
 
 
+def record_tool_invocation(
+    agent: str, tool_name: str, args: dict[str, Any], result: Any
+) -> None:
+    """Record a programmatically orchestrated tool call in diagnostic history."""
+    trace_buffer = _trace_buffer.get()
+    if trace_buffer is None:
+        return
+    call_id = f"{agent}-{tool_name}-{len(trace_buffer) + 1}"
+    trace_buffer.append(
+        {
+            "agent": agent,
+            "request": "",
+            "tool_trace": [
+                {"type": "tool_call", "name": tool_name, "args": args, "id": call_id},
+                {
+                    "type": "tool_result",
+                    "name": tool_name,
+                    "tool_call_id": call_id,
+                    "content": str(result),
+                },
+            ],
+        }
+    )
+
+
 def run_agent(agent: Any, request: str, name: str, failure: str) -> str:
     """Invoke a LangGraph agent and return its final text or a tool fallback."""
     try:

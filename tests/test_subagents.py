@@ -131,7 +131,7 @@ class TestMusicDeviceSelection:
         }
 
         resp = music_tools.play_track.invoke(
-            {"query": "play royals by lorde on my echo dot"}
+            {"title": "Royals", "artist": "Lorde", "device": "Echo Dot"}
         )
 
         assert "couldn't find a device" in resp.lower()
@@ -157,14 +157,16 @@ class TestMusicDeviceSelection:
             }
         }
 
-        resp = music_tools.play_track.invoke({"query": "play royals on my echo dot"})
+        resp = music_tools.play_track.invoke(
+            {"title": "Royals", "artist": "", "device": "Echo Dot"}
+        )
 
         assert "now playing: royals by lorde" in resp.lower()
         sp.start_playback.assert_called_once_with(
             device_id="2", uris=["spotify:track:123"]
         )
 
-    def test_search_excludes_device_phrase(self, monkeypatch):
+    def test_track_search_receives_music_separately_from_device(self, monkeypatch):
         import core.subagents.music.tools as music_tools
 
         sp = self._mock_spotify(
@@ -184,10 +186,12 @@ class TestMusicDeviceSelection:
             }
         }
 
-        music_tools.play_track.invoke({"query": "play royals by lorde on my echo dot"})
+        music_tools.play_track.invoke(
+            {"title": "Royals", "artist": "Lorde", "device": "Echo Dot"}
+        )
 
         called_query = sp.search.call_args[1]["q"]
-        assert "echo dot" not in called_query.lower()
+        assert called_query == "track:Royals artist:Lorde"
 
     def test_play_playlist_uses_playlist_context_not_track_search(self, monkeypatch):
         import core.subagents.music.tools as music_tools
@@ -200,8 +204,8 @@ class TestMusicDeviceSelection:
         }
         monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
 
-        response = music_tools.play_track.invoke(
-            {"query": "play my Funn playlist on Pixel 9 Pro"}
+        response = music_tools.play_playlist.invoke(
+            {"query": "Funn", "device": "Pixel 9 Pro"}
         )
 
         assert response == "Now playing playlist: Funn"
@@ -209,6 +213,231 @@ class TestMusicDeviceSelection:
         sp.start_playback.assert_called_once_with(
             device_id="pixel", context_uri="spotify:playlist:funn"
         )
+
+    def test_catalog_search_returns_public_tracks_and_playlists(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        tool_names = {tool.name for tool in music_tools.get_spotify_tools()}
+        assert {
+            "search_spotify_catalog",
+            "play_spotify_playlist",
+            "set_volume",
+        } <= tool_names
+
+        sp = self._mock_spotify([])
+        sp.search.return_value = {
+            "playlists": {"items": [None, {"name": "Hindi Lo-Fi", "artists": []}]},
+            "tracks": {
+                "items": [
+                    None,
+                    {
+                        "name": "Kesariya",
+                        "artists": [{"name": "Pritam"}],
+                    },
+                ]
+            },
+            "albums": {"items": []},
+            "artists": {"items": []},
+        }
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        response = music_tools.search_spotify_catalog.invoke({"query": "Hindi lo-fi"})
+
+        assert "Hindi Lo-Fi" in response
+        assert "Kesariya — Pritam" in response
+        sp.search.assert_called_once_with(
+            q="Hindi lo-fi", type="track,playlist,album,artist", limit=5
+        )
+        sp.start_playback.assert_not_called()
+
+    def test_play_public_playlist_and_set_requested_volume(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [{"id": "pixel", "name": "Pixel 9 Pro", "is_active": True}]
+        )
+        sp.search.return_value = {
+            "playlists": {
+                "items": [
+                    None,
+                    {"name": "Hindi Lo-Fi", "uri": "spotify:playlist:hindi-lofi"},
+                ]
+            }
+        }
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        response = music_tools.play_spotify_playlist.invoke(
+            {"query": "Hindi Lo-Fi", "device": "Pixel 9 Pro"}
+        )
+        volume_response = music_tools.set_volume.invoke(
+            {"volume_percent": 30, "device": "Pixel 9 Pro"}
+        )
+
+        assert response == "Now playing Spotify playlist: Hindi Lo-Fi"
+        assert volume_response == "Spotify volume set to 30%."
+        sp.start_playback.assert_called_once_with(
+            device_id="pixel", context_uri="spotify:playlist:hindi-lofi"
+        )
+        sp.volume.assert_called_once_with(volume_percent=30, device_id="pixel")
+
+    def test_music_agent_never_falls_back_from_requested_device(self, monkeypatch):
+        from langchain_core.messages import AIMessage
+
+        import core.subagents.music.agent as music_agent
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [{"id": "echo", "name": "Aditya's Echo Dot", "is_active": False}]
+        )
+        sp.search.return_value = {
+            "playlists": {
+                "items": [
+                    {
+                        "name": "Good Vibes Hindi",
+                        "uri": "spotify:playlist:good-vibes-hindi",
+                    }
+                ]
+            }
+        }
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        class ExplicitDeviceAgent:
+            def invoke(self, _input, _config=None):
+                result = music_tools.play_spotify_playlist.invoke(
+                    {"query": "Good Vibes Hindi", "device": "Pixel 9 Pro"}
+                )
+                return {"messages": [AIMessage(content=result)]}
+
+        monkeypatch.setattr(music_agent, "_agent", ExplicitDeviceAgent())
+
+        response = music_agent.music_agent_tool.invoke(
+            {
+                "request": (
+                    "Play a good Hindi playlist on the Pixel 9 Pro at 30% volume."
+                )
+            }
+        )
+
+        assert "couldn't find a device matching 'Pixel 9 Pro'" in response
+        assert "Aditya's Echo Dot" in response
+        sp.start_playback.assert_not_called()
+
+    def test_playback_tools_require_explicit_device_argument(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify([])
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        with pytest.raises(ValueError):
+            music_tools.play_spotify_playlist.invoke({"query": "Good Vibes Hindi"})
+        sp.start_playback.assert_not_called()
+
+    def test_resume_playback_resumes_queue_without_search(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [{"id": "echo", "name": "Aditya's Echo Dot", "is_active": False}]
+        )
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        response = music_tools.resume_playback.invoke({"device": "Aditya's Echo Dot"})
+
+        assert response == "Spotify playback resumed."
+        sp.search.assert_not_called()
+        sp.start_playback.assert_called_once_with(device_id="echo")
+
+    def test_unrelated_track_result_is_never_started(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [{"id": "echo", "name": "Aditya's Echo Dot", "is_active": False}]
+        )
+        sp.search.return_value = {
+            "tracks": {
+                "items": [
+                    {
+                        "uri": "spotify:track:victory-anthem",
+                        "name": "Victory Anthem",
+                        "artists": [{"name": "Khushi TDT"}],
+                    }
+                ]
+            }
+        }
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        response = music_tools.play_track.invoke(
+            {
+                "title": "pick up from the previous queue",
+                "artist": "",
+                "device": "Aditya's Echo Dot",
+            }
+        )
+
+        assert "not confident" in response
+        sp.start_playback.assert_not_called()
+
+    def test_current_playback_snapshot_returns_verified_media(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify([])
+        sp.current_playback.return_value = {
+            "is_playing": True,
+            "device": {"name": "Aditya's Echo Dot"},
+            "item": {
+                "name": "Victory Anthem",
+                "uri": "spotify:track:victory-anthem",
+                "artists": [{"name": "Khushi TDT"}],
+                "album": {
+                    "name": "Victory Anthem",
+                    "images": [{"url": "https://example.com/cover.jpg"}],
+                },
+            },
+        }
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        assert music_tools.get_current_playback_snapshot() == {
+            "status": "Playing",
+            "name": "Victory Anthem",
+            "artist": "Khushi TDT",
+            "album": "Victory Anthem",
+            "cover_url": "https://example.com/cover.jpg",
+            "device": "Aditya's Echo Dot",
+            "uri": "spotify:track:victory-anthem",
+        }
+
+    def test_set_volume_handles_unsupported_device(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify(
+            [{"id": "pixel", "name": "Pixel 9 Pro", "is_active": True}]
+        )
+        sp.volume.side_effect = RuntimeError("VOLUME_CONTROL_DISALLOW")
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        response = music_tools.set_volume.invoke(
+            {"volume_percent": 30, "device": "Pixel 9 Pro"}
+        )
+
+        assert response == (
+            "Spotify cannot control volume on that device. "
+            "Please adjust it directly on the device."
+        )
+
+    def test_set_volume_uses_matching_current_playback_device(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        sp = self._mock_spotify([])
+        sp.current_playback.return_value = {
+            "device": {"id": "pixel", "name": "Pixel 9 Pro"}
+        }
+        monkeypatch.setattr(music_tools, "_get_spotify_client", lambda: sp)
+
+        response = music_tools.set_volume.invoke(
+            {"volume_percent": 30, "device": "Pixel 9 Pro"}
+        )
+
+        assert response == "Spotify volume set to 30%."
+        sp.volume.assert_called_once_with(volume_percent=30, device_id="pixel")
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +466,10 @@ class TestGracefulDegradation:
         original = music_mod._agent
         music_mod._agent = None
 
-        with patch("core.subagents.music.agent._build", return_value=None):
+        with (
+            patch("core.subagents.music.agent.spotify_is_connected", return_value=True),
+            patch("core.subagents.music.agent._build", return_value=None),
+        ):
             result = music_mod.music_agent_tool.invoke({"request": "play something"})
         assert "unavailable" in result.lower()
 
@@ -518,6 +750,57 @@ class TestMultiStepChaining:
 
         music_mod._agent = None
         info_mod._agent = None
+
+
+class TestSpotifyAuthentication:
+    def test_missing_token_never_prompts_for_terminal_input(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        auth_manager = Mock()
+        auth_manager.cache_handler.get_cached_token.return_value = None
+        auth_manager.validate_token.return_value = None
+        terminal_input = Mock(side_effect=AssertionError("terminal input is forbidden"))
+        monkeypatch.setattr(music_tools, "_spotify_client", None)
+        monkeypatch.setattr(music_tools, "_spotify_auth_manager", lambda: auth_manager)
+        monkeypatch.setattr("builtins.input", terminal_input)
+
+        assert not music_tools.spotify_is_connected()
+        with pytest.raises(music_tools.SpotifyAuthenticationRequired):
+            music_tools._get_spotify_client()
+        terminal_input.assert_not_called()
+
+    def test_control_panel_callback_connects_without_terminal_input(self, monkeypatch):
+        import core.subagents.music.tools as music_tools
+
+        auth_manager = Mock()
+        auth_manager.parse_response_code.return_value = "authorization-code"
+        spotify_client = Mock()
+        monkeypatch.setattr(music_tools, "_spotify_client", None)
+        monkeypatch.setattr(music_tools, "_spotify_auth_manager", lambda: auth_manager)
+        monkeypatch.setattr(music_tools.spotipy, "Spotify", spotify_client)
+
+        music_tools.complete_spotify_authorization(
+            "http://127.0.0.1:8100/callback?code=authorization-code"
+        )
+
+        auth_manager.get_access_token.assert_called_once_with(
+            "authorization-code", as_dict=False
+        )
+        spotify_client.assert_called_once_with(auth_manager=auth_manager)
+
+    def test_music_agent_returns_setup_message_before_building(self, monkeypatch):
+        import core.subagents.music.agent as music_agent
+
+        monkeypatch.setattr(music_agent, "_agent", None)
+        monkeypatch.setattr(music_agent, "_agents", {})
+        monkeypatch.setattr(music_agent, "spotify_is_connected", lambda: False)
+        build = Mock()
+        monkeypatch.setattr(music_agent, "_build", build)
+
+        response = music_agent.music_agent_tool.invoke({"request": "play music"})
+
+        assert "agent controls" in response.lower()
+        build.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

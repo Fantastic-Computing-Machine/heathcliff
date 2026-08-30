@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, Literal, Optional
+from typing import Any, Dict, Generator, Iterable, Literal, Optional
 
 from langfuse import Langfuse, propagate_attributes  # noqa: F401 (re-exported)
 from langfuse.langchain import CallbackHandler
@@ -30,6 +31,7 @@ def _build_client_kwargs() -> Dict[str, Any]:
         kwargs["host"] = host
     if Config.LANGFUSE_RELEASE:
         kwargs["release"] = Config.LANGFUSE_RELEASE
+    kwargs["environment"] = Config.ENVIRONMENT
     return kwargs
 
 
@@ -44,12 +46,10 @@ def get_langfuse_client() -> Optional[Langfuse]:
         kwargs = _build_client_kwargs()
         try:
             _langfuse_client = Langfuse(**kwargs)
-            logger.info("Langfuse client initialized")
-        except TypeError:
-            # Older SDK builds don't support the 'release' kwarg
-            kwargs.pop("release", None)
-            _langfuse_client = Langfuse(**kwargs)
-            logger.info("Langfuse client initialized without release metadata")
+            logger.info(
+                "Langfuse v4 client initialized (environment=%s)",
+                Config.ENVIRONMENT,
+            )
         except Exception as exc:
             logger.warning(f"Unable to initialize Langfuse client: {exc}")
 
@@ -61,7 +61,7 @@ def get_langfuse_callback_handler() -> Optional[CallbackHandler]:
 
     Session and user context should be injected per-request via
     ``propagate_attributes(session_id=..., user_id=...)`` rather than
-    through handler constructor kwargs (not supported in Langfuse v3).
+    through handler constructor kwargs (not supported in Langfuse v4).
 
     Callback handlers retain LangChain run IDs while a request is active, so
     sharing one between concurrent requests disconnects child observations.
@@ -82,6 +82,26 @@ def get_langfuse_callback_handler() -> Optional[CallbackHandler]:
     except Exception as exc:
         logger.warning(f"Unable to initialize Langfuse callback handler: {exc}")
         return None
+
+
+def trace_tags(explicit_tags: Optional[Iterable[str]] = None) -> list[str]:
+    """Return stable request tags, marking automated pytest runs distinctly."""
+    tags = [tag.strip() for tag in explicit_tags or () if tag and tag.strip()]
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        tags.extend(("test", "pytest"))
+    return list(dict.fromkeys(tags))
+
+
+def flush_langfuse(client: Optional[Langfuse] = None) -> None:
+    """Synchronously export one completed request without affecting its result."""
+    active_client = client or get_langfuse_client()
+    if active_client is None:
+        return
+    try:
+        active_client.flush()
+        logger.debug("Langfuse trace flush completed")
+    except Exception as exc:
+        logger.warning("Unable to flush Langfuse traces: %s", exc)
 
 
 @contextmanager
