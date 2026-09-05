@@ -79,6 +79,38 @@ def _base_state():
 
 
 class TestCoordinatorStability:
+    def test_stream_announces_queued_actions_before_execution(self, registry):
+        from core.coordinator_graph import build_coordinator_graph, stream_coordinator
+
+        graph = build_coordinator_graph(
+            registry,
+            _make_llm(
+                [
+                    {
+                        "goal": "Get the weather",
+                        "target_agent": "info_agent_tool",
+                        "depends_on": [],
+                        "parallelizable": False,
+                    }
+                ]
+            ),
+        )
+        event_types = [
+            event["type"]
+            for event in stream_coordinator(graph, "Weather?", "queued-actions")
+        ]
+        assert event_types.index("subtask_queued") < event_types.index(
+            "subtask_complete"
+        )
+
+    def test_empty_plan_uses_direct_response_instead_of_error(self):
+        from core.coordinator_graph import _aggregate
+
+        llm = Mock()
+        llm.invoke.return_value = Mock(content="Good evening. How may I help?")
+        result = _aggregate({"task_results": [], "user_input": "Hi"}, llm)
+        assert result["final_response"] == "Good evening. How may I help?"
+
     def test_planner_keeps_spotify_work_in_one_specialist_task(self):
         from core.coordinator_graph import _PLAN_SYSTEM
 

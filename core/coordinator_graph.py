@@ -23,7 +23,7 @@ from langgraph.types import Command, interrupt
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from typing_extensions import TypedDict
 
-from core.approval_handler import requires_approval
+from core.approval_handler import requires_approval, requires_serial_execution
 from core.delegation.contracts import (
     ErrorType,
     TaskResult,
@@ -116,6 +116,11 @@ Rules:
 - Only mention errors if no useful result was obtained
 
 Return ONLY the final response text."""
+
+_DIRECT_RESPONSE_SYSTEM = """\
+You are Heathcliff, a polished personal assistant. Respond directly to a
+conversational request that requires no tool or external action. Be warm,
+concise, and helpful. Return ONLY the response text."""
 
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0B-\x1F\x7F]")
 _MAX_DEP_CONTEXT_CHARS = 1600
@@ -622,7 +627,7 @@ def _execute_single_task(
         result = (
             invoke()
             if descriptor.sensitive_actions
-            or requires_approval(descriptor.name, spec.goal)
+            or requires_serial_execution(descriptor.name)
             else _execute_with_timeout(invoke, timeout_ms=timeout_ms)
         )
     except TimeoutError:
@@ -795,6 +800,30 @@ def _aggregate(state: CoordinatorState, llm: Any) -> Dict[str, Any]:
 
     successful = [r for r in task_results if r.is_success]
     failed = [r for r in task_results if not r.is_success]
+
+    if not task_results:
+        try:
+            with trace_observation(
+                "coordinator.direct_response",
+                as_type="chain",
+                input={"user_input": user_input},
+            ) as observation:
+                direct_result = llm.invoke(
+                    [
+                        SystemMessage(content=_DIRECT_RESPONSE_SYSTEM),
+                        HumanMessage(content=user_input),
+                    ]
+                )
+                response = _extract_llm_text(
+                    getattr(direct_result, "content", direct_result)
+                ).strip()
+                if observation is not None:
+                    observation.update(output={"response": response})
+            if response:
+                return {"final_response": response}
+        except Exception as exc:
+            logger.warning("[coordinator:aggregate] Direct response failed: %s", exc)
+        return {"final_response": "How may I assist you?"}
 
     if not successful:
         error_msgs = "; ".join(
@@ -990,6 +1019,20 @@ def stream_coordinator(
                         "agents": [s.get("target_agent") for s in specs],
                     },
                 }
+                for spec in specs:
+                    yield {
+                        "type": "subtask_queued",
+                        "message": (
+                            f"Queued {spec.get('target_agent', 'agent')}: "
+                            f"{spec.get('goal', '')}"
+                        ),
+                        "data": {
+                            "task_id": spec.get("task_id"),
+                            "agent": spec.get("target_agent"),
+                            "goal": spec.get("goal"),
+                            "status": "queued",
+                        },
+                    }
                 yield {
                     "type": "dispatch",
                     "message": "Dispatching sequentially",

@@ -22,6 +22,7 @@ from core.coordinator_graph import (
 )
 from core.delegation.registry import build_default_registry
 from core.runtime_profile import RuntimeProfile
+from core.runtime.compat import RuntimeV2CompatibilityAdapter
 from db.memory_manager import MemoryManager
 from instructions.prompts import (
     USER_PROMPT_TEMPLATE,
@@ -86,6 +87,7 @@ class HeathcliffAgent:
         memory_manager: Optional[MemoryManager] = None,
         runtime_profile: Optional[RuntimeProfile] = None,
         runtime_profile_revision: int = 0,
+        runtime_v2: Optional[Any] = None,
     ):
         """Initialise the Heathcliff supervisor agent.
 
@@ -101,6 +103,9 @@ class HeathcliffAgent:
         self.runtime_profile = runtime_profile or RuntimeProfile.defaults()
         self.runtime_profile.validate()
         self.runtime_profile_revision = runtime_profile_revision
+        self.runtime_v2 = (
+            RuntimeV2CompatibilityAdapter(runtime_v2) if runtime_v2 is not None else None
+        )
 
         self.callbacks: List[Any] = []
 
@@ -235,6 +240,11 @@ class HeathcliffAgent:
                 f"User input exceeds maximum length of {INPUT_MAX_LENGTH} characters"
             )
 
+        if self.runtime_v2 is not None:
+            return self.runtime_v2.invoke(
+                user_input, conversation_id or str(uuid.uuid4())
+            )
+
         if self.memory_manager is None:
             raise AgentMemoryError("MemoryManager not initialised")
         conversation_id = conversation_id or str(uuid.uuid4())
@@ -325,6 +335,13 @@ class HeathcliffAgent:
                 "message": "User input exceeds maximum length",
                 "data": f"Input must be less than {INPUT_MAX_LENGTH:,} characters.",
             }
+            return
+
+        if self.runtime_v2 is not None:
+            conversation_id = conversation_id or str(uuid.uuid4())
+            response = self.runtime_v2.invoke(user_input, conversation_id)
+            yield {"type": "response", "data": response}
+            yield {"type": "complete", "data": {"response": response}}
             return
 
         if self.memory_manager is None:
@@ -494,6 +511,8 @@ class HeathcliffAgent:
         trace_tags: Optional[List[str]] = None,
     ) -> str:
         """Resume the coordinator action paused for Streamlit approval."""
+        if self.runtime_v2 is not None:
+            return self.runtime_v2.resume_approval(conversation_id, approved)
         if self.memory_manager is None:
             raise AgentMemoryError("MemoryManager not initialised")
 

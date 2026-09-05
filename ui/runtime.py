@@ -6,7 +6,9 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
+from config import Config
 from core.agent_core import HeathcliffAgent
+from core.runtime.http_client import RuntimeV2HttpClient
 from core.runtime_profile import RuntimeProfile
 from db.memory_manager import MemoryManager
 
@@ -15,7 +17,7 @@ from db.memory_manager import MemoryManager
 class AgentHandle:
     """An agent snapshot that remains valid after later profile changes."""
 
-    agent: HeathcliffAgent
+    agent: Any
     revision: int
     profile: RuntimeProfile
 
@@ -28,7 +30,7 @@ class AppRuntime:
         self._lock = threading.RLock()
         self._profile = RuntimeProfile.defaults()
         self._revision = 0
-        self._agents: dict[int, HeathcliffAgent] = {}
+        self._agents: dict[int, Any] = {}
 
     def snapshot(self) -> tuple[RuntimeProfile, int]:
         with self._lock:
@@ -52,13 +54,16 @@ class AppRuntime:
         with self._lock:
             agent = self._agents.get(self._revision)
             if agent is None:
-                # ponytail: retain old snapshots only for in-process approval resumes.
-                HeathcliffAgent.reset()
-                agent = HeathcliffAgent(
-                    memory_manager=self.memory,
-                    runtime_profile=self._profile,
-                    runtime_profile_revision=self._revision,
-                )
+                if Config.RUNTIME_V2_ENABLED:
+                    agent = RuntimeV2HttpClient(Config.RUNTIME_V2_URL)
+                else:
+                    # ponytail: retain old snapshots only for in-process approval resumes.
+                    HeathcliffAgent.reset()
+                    agent = HeathcliffAgent(
+                        memory_manager=self.memory,
+                        runtime_profile=self._profile,
+                        runtime_profile_revision=self._revision,
+                    )
                 self._agents[self._revision] = agent
             return AgentHandle(agent, self._revision, self._profile)
 
@@ -70,6 +75,8 @@ class AppRuntime:
                     "The approval's original agent is no longer available."
                 )
             profile = (
-                self._profile if revision == self._revision else agent.runtime_profile
+                self._profile
+                if revision == self._revision or Config.RUNTIME_V2_ENABLED
+                else agent.runtime_profile
             )
             return AgentHandle(agent, revision, profile)

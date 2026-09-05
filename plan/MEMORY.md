@@ -480,3 +480,49 @@ heathcliff/
 **Phases 1–4 Complete** ✅ — Subagents architecture refactor, skills framework (3 skills), Mem0 memory, 3D Blob UI, Langfuse observability, master profile TOML migration, user reference generalization, weather API LangChain wrapper, JSON-backed recent context store, middleware stack (tool selector + call limits + todo list + alias rewriting), prompt optimization (XML-delimited system prompt, normalized tool descriptions, slimmed subagent prompts) all completed. Full test suite: 237 passed. **Phase 5 (Testing & Polish) In Progress** ⏳
 
 Next steps: Integration testing, error recovery, Docker containerization, troubleshooting guide.
+
+## 2026-08-29 — Runtime V2 foundation
+
+- Added a Python/Gemini-native, provider-neutral Runtime V2 beside the legacy
+  LangGraph coordinator: append-only events, idempotent input admission,
+  one-turn-per-thread coordination, durable approval state, resumable SSE, and
+  PostgreSQL leases for runtime and mutation resource scopes.
+- Added managed PostgreSQL schema, S3 artifact health boundary, native Gemini
+  function-call/thought-signature adapter, structured semantic-memory worker,
+  multi-architecture container files, and legacy `HeathcliffAgent` adapters.
+- Removed the legacy keyword-based memory admission gate. Every non-empty user
+  turn reaches semantic classification; inference and secret-bearing candidates
+  are rejected before persistence.
+- V2 is opt-in and additive. Existing Streamlit/voice paths retain the legacy
+  coordinator until external PostgreSQL/S3 credentials and cutover validation
+  are configured.
+- With `RUNTIME_V2_ENABLED=true`, Streamlit, CLI/voice, and the floating blob
+  use the V2 HTTP/SSE client and do not silently fall back to a local agent.
+- Legacy coordinator planner outputs with no tool tasks now use a direct model
+  response. This prevents greetings such as "Hi" from falling through to the
+  generic "wasn't able to complete" error.
+- Email is intentionally non-interactive across legacy and Runtime V2 paths,
+  but remains serialized so it cannot outlive a worker timeout. Streamlit now
+  reruns directly into pending approval review, clears approvals before resume,
+  and shows queued actions before execution begins.
+- Calendar and communications retain explicit approval. Their Streamlit review
+  card now clears before execution and immediately shows a continuing-action
+  status; email never enters that branch.
+- Runtime V2 also supports fully local persistence: `RUNTIME_STORAGE_BACKEND=sqlite`
+  stores the durable event snapshot in `RUNTIME_SQLITE_PATH` and artifacts in
+  `RUNTIME_ARTIFACT_DIRECTORY`. It needs no PostgreSQL, S3, MinIO, or Docker,
+  but is deliberately single-host/single-daemon; move both paths together for
+  a machine handoff.
+- Validation: focused Runtime V2 persistence/artifact tests and the full suite
+  passed (`380 passed`). `uvx ty check` retains 28 unrelated existing
+  diagnostics; the V2 daemon returned `ready` on its SQLite/filesystem setup.
+- Runtime V2 now emits native Langfuse traces independent of LangChain:
+  `heathcliff.agent.v2` / `heathcliff.runtime.v2` root, `runtime.model`
+  generations, and `runtime.tool.<name>` observations. External-tool inputs and
+  outputs are redacted. A live harmless V2 turn completed and logged a
+  successful Langfuse flush at 2026-08-29 21:50 local time.
+- Gemini function declarations must omit `additionalProperties`; the native
+  adapter now removes it recursively. Gemini thought signatures are opaque and
+  can be binary, so they are base64 encoded and the SQLite snapshot serializer
+  is binary-safe. This prevents successful V2 model/tool loops from crashing
+  during state persistence.

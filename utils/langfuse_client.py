@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import Any, Dict, Generator, Iterable, Literal, Optional
 
 from langfuse import Langfuse, propagate_attributes  # noqa: F401 (re-exported)
@@ -105,11 +105,50 @@ def flush_langfuse(client: Optional[Langfuse] = None) -> None:
 
 
 @contextmanager
+def trace_runtime_turn(
+    *, thread_id: str, turn_id: str, user_input: str
+) -> Generator[Any | None, None, None]:
+    """Trace one native Runtime V2 turn independently of LangChain callbacks."""
+    client = get_langfuse_client()
+    if client is None:
+        yield None
+        return
+
+    attributes = {
+        "trace_name": f"{Config.TRACE_NAME}.v2",
+        "session_id": thread_id,
+        "user_id": Config.LANGFUSE_USER_ID,
+        "environment": Config.ENVIRONMENT,
+        "version": Config.LANGFUSE_VERSION,
+        "metadata": {"runtime": "v2", "thread_id": thread_id, "turn_id": turn_id},
+        "tags": trace_tags(["runtime-v2"]),
+    }
+    try:
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(propagate_attributes(**attributes))
+                observation = stack.enter_context(
+                    client.start_as_current_observation(
+                        name="heathcliff.runtime.v2",
+                        as_type="agent",
+                        input={"user_input": user_input, "turn_id": turn_id},
+                    )
+                )
+            except Exception as exc:
+                logger.warning("Unable to start Runtime V2 trace: %s", exc)
+                yield None
+                return
+            yield observation
+    finally:
+        flush_langfuse(client)
+
+
+@contextmanager
 def trace_observation(
     name: str,
     *,
     input: Any = None,
-    as_type: Literal["agent", "chain", "span", "tool"] = "span",
+    as_type: Literal["agent", "chain", "generation", "span", "tool"] = "span",
 ) -> Generator[Any | None, None, None]:
     """Nest a coordinator step under the active Langfuse request, if any."""
     if not trace.get_current_span().get_span_context().is_valid:

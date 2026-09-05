@@ -380,6 +380,9 @@
 ### In Progress
 
 - 🔄 Integration testing & error recovery
+- 🔄 Runtime V2 cutover: validate provider/OAuth integrations and compare the
+  new native Langfuse traces with legacy callbacks before enabling broad client
+  traffic. PostgreSQL/S3 remains the portable multi-host alternative.
 
 ### Blocked
 
@@ -391,4 +394,4 @@
 
 ---
 
-**Last Updated**: 2026-04-06
+**Last Updated**: 2026-08-29

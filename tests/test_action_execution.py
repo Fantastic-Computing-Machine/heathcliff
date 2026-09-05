@@ -82,7 +82,6 @@ def test_dependency_outputs_reach_research_contact_email_task():
     from core.coordinator_graph import (
         build_coordinator_graph,
         invoke_coordinator,
-        resume_coordinator,
     )
 
     registry = CapabilityRegistry()
@@ -140,9 +139,7 @@ def test_dependency_outputs_reach_research_contact_email_task():
         "Research sea levels and email Philip a summary",
         "research-email",
     )
-    assert response == "Approval is required before I can complete that action."
-
-    resume_coordinator(graph, "research-email", approved=True)
+    assert response == "Action chain completed."
 
     assert len(email_requests) == 1
     assert "3.7mm/year" in email_requests[0]

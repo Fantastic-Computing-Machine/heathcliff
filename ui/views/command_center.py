@@ -30,21 +30,30 @@ def _append_timeline(event: dict[str, Any]) -> None:
         st.session_state.run_timeline = st.session_state.run_timeline[-30:]
 
 
-def _resume_approval(
-    runtime: Any, approved: bool, modified_input: str | None = None
-) -> None:
-    approval = st.session_state["pending_approval"]
+def _resume_approval(runtime: Any, approved: bool) -> None:
+    approval = st.session_state.pop("pending_approval")
+    st.session_state.run_timeline.append(
+        {
+            "type": "approval_resolved",
+            "message": "Action approved" if approved else "Action rejected",
+            "data": {"tool_name": approval.get("tool_name", "action")},
+        }
+    )
     try:
         handle = runtime.agent_for_revision(approval["profile_revision"])
-        response = handle.agent.resume_approval(
-            conversation_id=approval["session_id"],
-            user_input=approval["user_input"],
-            approved=approved,
-            modified_input=modified_input,
-            execution_events=approval.get("execution_events", []),
-        )
+        with st.status("Continuing the approved action", expanded=True) as status:
+            st.write("Approval recorded. Heathcliff is executing the planned actions.")
+            response = handle.agent.resume_approval(
+                conversation_id=approval["session_id"],
+                user_input=approval["user_input"],
+                approved=approved,
+                execution_events=approval.get("execution_events", []),
+            )
+            status.update(
+                label="Action complete" if approved else "Action rejected",
+                state="complete",
+            )
         st.session_state.messages.append({"role": "assistant", "content": response})
-        st.session_state.pop("pending_approval", None)
         st.success("Action resumed." if approved else "Action rejected.")
         st.rerun()
     except Exception as exc:
@@ -63,17 +72,12 @@ def _render_approval(runtime: Any) -> None:
     else:
         st.code(approval.get("tool_input", ""), language="text")
 
-    with st.expander("Review or modify the action", expanded=True):
-        revised = st.text_area(
-            "Action instructions",
-            value=approval.get("tool_input", ""),
-            key="approval_modified_input",
-            height=120,
-        )
+    with st.expander("Review the action", expanded=True):
+        st.code(approval.get("tool_input", ""), language="text")
         approve, reject = st.columns(2)
         with approve:
             if st.button("Approve and continue", type="primary", width="stretch"):
-                _resume_approval(runtime, approved=True, modified_input=revised)
+                _resume_approval(runtime, approved=True)
         with reject:
             if st.button("Reject action", width="stretch"):
                 _resume_approval(runtime, approved=False)
@@ -171,6 +175,8 @@ def render() -> None:
                         status.update(
                             label=event.get("message", "Working"), state="running"
                         )
+                    elif event_type == "subtask_queued":
+                        st.write(event.get("message", "Action queued"))
                     elif event_type == "subtask_complete":
                         st.write(event.get("message", "Subtask complete"))
                         music_used = (
@@ -214,3 +220,6 @@ def render() -> None:
             except Exception as exc:
                 status.update(label="Run failed", state="error")
                 response_box.error(f"Run failed: {exc}")
+
+    if st.session_state.get("pending_approval"):
+        st.rerun()

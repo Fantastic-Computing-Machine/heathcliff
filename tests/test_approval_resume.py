@@ -42,11 +42,11 @@ def _register(registry, name, calls, response):
     registry.register(AgentDescriptor(name=name, capabilities=[name], invoke_fn=invoke))
 
 
-def test_sensitive_action_pauses_then_approval_executes_all_tasks_once():
-    calls = {"info": [], "email": []}
+def test_calendar_action_pauses_then_approval_executes_all_tasks_once():
+    calls = {"info": [], "calendar": []}
     registry = CapabilityRegistry()
     _register(registry, "info_agent_tool", calls["info"], "Research complete")
-    _register(registry, "email_agent_tool", calls["email"], "Email sent")
+    _register(registry, "calendar_agent_tool", calls["calendar"], "Event created")
     plan = [
         {
             "goal": "research the topic",
@@ -55,8 +55,8 @@ def test_sensitive_action_pauses_then_approval_executes_all_tasks_once():
             "parallelizable": False,
         },
         {
-            "goal": "send email with the result",
-            "target_agent": "email_agent_tool",
+            "goal": "create a calendar event with the result",
+            "target_agent": "calendar_agent_tool",
             "depends_on": [0],
             "parallelizable": False,
         },
@@ -68,25 +68,25 @@ def test_sensitive_action_pauses_then_approval_executes_all_tasks_once():
 
     approval = next(event for event in events if event["type"] == "approval_required")
     assert approval["data"]["session_id"] == session_id
-    assert approval["data"]["actions"][0]["tool_name"] == "email_agent_tool"
+    assert approval["data"]["actions"][0]["tool_name"] == "calendar_agent_tool"
     assert not any(event["type"] == "complete" for event in events)
-    assert calls == {"info": [], "email": []}
+    assert calls == {"info": [], "calendar": []}
 
     response = resume_coordinator(graph, session_id, approved=True)
 
     assert response == "Research complete\n\n---\n\nEmail sent"
     assert len(calls["info"]) == 1
-    assert len(calls["email"]) == 1
+    assert len(calls["calendar"]) == 1
 
 
-def test_rejection_resumes_without_sensitive_execution_and_maps_status():
+def test_calendar_rejection_resumes_without_execution_and_maps_status():
     calls = []
     registry = CapabilityRegistry()
-    _register(registry, "email_agent_tool", calls, "Email sent")
+    _register(registry, "calendar_agent_tool", calls, "Event created")
     plan = [
         {
-            "goal": "send email to Alex",
-            "target_agent": "email_agent_tool",
+            "goal": "create an event for Alex",
+            "target_agent": "calendar_agent_tool",
             "depends_on": [],
             "parallelizable": False,
         }
@@ -94,7 +94,7 @@ def test_rejection_resumes_without_sensitive_execution_and_maps_status():
     graph = build_coordinator_graph(registry, _make_llm(plan))
     session_id = "approval-rejected"
 
-    events = list(stream_coordinator(graph, "send email", session_id))
+    events = list(stream_coordinator(graph, "create event", session_id))
     assert any(event["type"] == "approval_required" for event in events)
 
     response = resume_coordinator(graph, session_id, approved=False)

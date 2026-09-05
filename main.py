@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from config import Config
 from core.agent_core import HeathcliffAgent
+from core.runtime.http_client import RuntimeV2HttpClient
 from db.memory_manager import MemoryManager
 from logger import logger
 from utils.errors import AgentMemoryError
@@ -24,7 +25,7 @@ class HeathcliffAssistant:
         # Initialize memory manager
         logger.info("Initializing memory manager...")
         try:
-            self.memory = MemoryManager()
+            self.memory = None if Config.RUNTIME_V2_ENABLED else MemoryManager()
         except AgentMemoryError as exc:
             logger.error(str(exc))
             print("Memory Not found, Heathcliff shutting down.")
@@ -32,7 +33,11 @@ class HeathcliffAssistant:
 
         # Initialize agent (self-assembles all subagent + skill tools)
         logger.info("Initialising supervisor agent...")
-        self.agent = HeathcliffAgent(memory_manager=self.memory)
+        self.agent: Any
+        if Config.RUNTIME_V2_ENABLED:
+            self.agent = RuntimeV2HttpClient(Config.RUNTIME_V2_URL)
+        else:
+            self.agent = HeathcliffAgent(memory_manager=self.memory)
 
         self.audio: Optional[Any] = None
         if enable_audio:

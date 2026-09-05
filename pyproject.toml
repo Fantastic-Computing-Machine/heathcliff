@@ -5,12 +5,16 @@ description = "Heathcliff is a personal AI assistant that can help you with a va
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "asyncpg>=0.30.0",
     "beautifulsoup4>=4.14.3",
+    "boto3>=1.35.0",
     "chromadb>=1.4.0",
+    "cryptography>=44.0.0",
     "duckduckgo-search>=8.1.1",
     "fastapi>=0.129.0",
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.2.0",
+    "google-genai>=1.0.0",
     "langchain>=1.2.0",
     "langchain-community>=0.4.1",
     "langchain-core>=1.2.5",

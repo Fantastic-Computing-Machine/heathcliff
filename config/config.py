@@ -241,6 +241,25 @@ class CoordinatorConf:
     MAX_TOTAL_RUNTIME_MS = int(os.getenv("COORDINATOR_MAX_RUNTIME_MS", "300000"))
 
 
+class RuntimeV2Conf:
+    """Configuration for the durable Gemini-native runtime."""
+
+    RUNTIME_V2_ENABLED = os.getenv("RUNTIME_V2_ENABLED", "false").lower() == "true"
+    RUNTIME_V2_URL = os.getenv("RUNTIME_V2_URL", "http://127.0.0.1:8700")
+    RUNTIME_STORAGE_BACKEND = os.getenv("RUNTIME_STORAGE_BACKEND", "postgres").lower()
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
+    RUNTIME_SQLITE_PATH = os.getenv("RUNTIME_SQLITE_PATH", ".data/runtime_v2.sqlite3")
+    RUNTIME_ARTIFACT_DIRECTORY = os.getenv(
+        "RUNTIME_ARTIFACT_DIRECTORY", ".data/runtime_artifacts"
+    )
+    RUNTIME_INSTANCE_ID = os.getenv("RUNTIME_INSTANCE_ID", "")
+    RUNTIME_LEASE_SECONDS = int(os.getenv("RUNTIME_LEASE_SECONDS", "30"))
+    RUNTIME_MAX_MODEL_STEPS = int(os.getenv("RUNTIME_MAX_MODEL_STEPS", "20"))
+    RUNTIME_CONTEXT_WINDOW = int(os.getenv("RUNTIME_CONTEXT_WINDOW", "32768"))
+    RUNTIME_S3_BUCKET = os.getenv("RUNTIME_S3_BUCKET", "")
+    RUNTIME_S3_ENDPOINT = os.getenv("RUNTIME_S3_ENDPOINT")
+
+
 class Conf(
     RuntimeConf,
     MasterConf,
@@ -254,6 +273,7 @@ class Conf(
     RecentContextConfig,
     AudioConfig,
     CoordinatorConf,
+    RuntimeV2Conf,
 ):
     _instance: Optional["Conf"] = None
 

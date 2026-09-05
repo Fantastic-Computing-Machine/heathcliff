@@ -194,3 +194,41 @@ def test_request_attributes_wrap_root_callbacks_and_flush():
         "propagate-exit",
     ]
     flush.assert_called_once_with(client)
+
+
+def test_runtime_v2_trace_uses_its_own_root_and_flushes():
+    from config import Config
+    from utils.langfuse_client import trace_runtime_turn
+
+    observation = Mock()
+    client = Mock()
+
+    @contextmanager
+    def propagation_context(**kwargs):
+        assert kwargs["trace_name"] == f"{Config.TRACE_NAME}.v2"
+        assert kwargs["session_id"] == "thread-1"
+        assert kwargs["metadata"]["runtime"] == "v2"
+        yield
+
+    @contextmanager
+    def observation_context():
+        yield observation
+
+    client.start_as_current_observation.return_value = observation_context()
+    with (
+        patch("utils.langfuse_client.get_langfuse_client", return_value=client),
+        patch("utils.langfuse_client.propagate_attributes", propagation_context),
+        patch("utils.langfuse_client.trace_tags", return_value=["runtime-v2"]),
+        patch("utils.langfuse_client.flush_langfuse") as flush,
+    ):
+        with trace_runtime_turn(
+            thread_id="thread-1", turn_id="turn-1", user_input="hello"
+        ) as current:
+            assert current is observation
+
+    client.start_as_current_observation.assert_called_once_with(
+        name="heathcliff.runtime.v2",
+        as_type="agent",
+        input={"user_input": "hello", "turn_id": "turn-1"},
+    )
+    flush.assert_called_once_with(client)

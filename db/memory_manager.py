@@ -329,51 +329,10 @@ class MemoryManager:
 
     @staticmethod
     def _should_extract_memory(user_msg: str) -> bool:
-        """Heuristic gate — only enqueue turns likely to contain personal facts."""
-        if not user_msg or not user_msg.strip():
-            return False
-        text = user_msg.strip().lower()
-        if len(text) < 5:
-            return False
-        if text.endswith("?"):
-            return False
-        if text.startswith(
-            (
-                "can you",
-                "could you",
-                "please ",
-                "tell me",
-                "find ",
-                "search ",
-                "send ",
-                "email ",
-            )
-        ):
-            return False
-        triggers = (
-            "remember",
-            "i like",
-            "i love",
-            "i prefer",
-            "my favorite",
-            "my favourite",
-            "i am ",
-            "i'm ",
-            "my name is",
-            "call me ",
-            "i live",
-            "i work",
-            "my email",
-            "my phone",
-            "my address",
-            "my birthday",
-            "my birthdate",
-            "i have",
-            "i don't",
-            "i do not",
-            "i hate",
-            "my diet",
-            "my allergies",
-            "my timezone",
-        )
-        return any(t in text for t in triggers)
+        """Queue every substantive turn; the semantic backend decides retention.
+
+        Kept under the old name for compatibility while Runtime V2 migrates
+        callers away from Mem0.  It intentionally performs no phrase or intent
+        matching, because wording is not a reliable proxy for memory value.
+        """
+        return bool(user_msg and user_msg.strip())

@@ -1,0 +1,17 @@
+services:
+  heathcliff-runtime:
+    build: .
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      AI_KEY: ${AI_KEY:?AI_KEY is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      RUNTIME_STATE_ENCRYPTION_KEY: ${RUNTIME_STATE_ENCRYPTION_KEY:?RUNTIME_STATE_ENCRYPTION_KEY is required}
+      RUNTIME_INSTANCE_ID: ${RUNTIME_INSTANCE_ID:-heathcliff-runtime}
+      RUNTIME_S3_BUCKET: ${RUNTIME_S3_BUCKET:?RUNTIME_S3_BUCKET is required}
+      RUNTIME_S3_ENDPOINT: ${RUNTIME_S3_ENDPOINT:-}
+    ports:
+      - "8700:8700"
+    restart: unless-stopped

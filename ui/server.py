@@ -4,6 +4,7 @@
 import os
 import sys
 import uuid
+from typing import Any
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,7 +15,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from config import Config
 from core.agent_core import HeathcliffAgent
+from core.runtime.http_client import RuntimeV2HttpClient
 from db.memory_manager import MemoryManager
 from logger import logger
 
@@ -38,17 +41,20 @@ app.add_middleware(
 
 # ── Agent singleton ───────────────────────────────────────────────────
 _memory: MemoryManager | None = None
-_agent: HeathcliffAgent | None = None
+_agent: Any | None = None
 _conversation_id: str = str(uuid.uuid4())
 
 
-def _get_agent() -> HeathcliffAgent:
+def _get_agent() -> Any:
     """Lazy-init the Heathcliff agent."""
     global _memory, _agent
     if _agent is None:
         logger.info("Initializing Heathcliff agent for blob UI...")
-        _memory = MemoryManager()
-        _agent = HeathcliffAgent(memory_manager=_memory)
+        if Config.RUNTIME_V2_ENABLED:
+            _agent = RuntimeV2HttpClient(Config.RUNTIME_V2_URL)
+        else:
+            _memory = MemoryManager()
+            _agent = HeathcliffAgent(memory_manager=_memory)
         logger.info("Agent ready.")
     return _agent
 
@@ -71,9 +77,9 @@ class StateRequest(BaseModel):
 async def serve_index():
     """Serve the blob UI."""
     logger.info("Serving blob UI")
-    if not _agent or isinstance(_agent, HeathcliffAgent):
+    if _agent is None:
         logger.info("Initializing Heathcliff...")
-        _get_agent()
+    _get_agent()
     logger.info("Blob UI ready.")
     return FileResponse(os.path.join(ASSETS_DIR, "index.html"))
 
@@ -81,13 +87,13 @@ async def serve_index():
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     """Send a message to Heathcliff and get a response."""
-    if not _agent or isinstance(_agent, HeathcliffAgent):
+    if _agent is None:
         logger.info("Initializing Heathcliff...")
-        _get_agent()
+    agent = _get_agent()
     logger.info("Blob UI ready.")
     try:
         logger.info(f"Blob UI request: {req.message}")
-        response = _agent.invoke(req.message, conversation_id=_conversation_id)
+        response = agent.invoke(req.message, conversation_id=_conversation_id)
         logger.info(f"Blob UI response: {response}")
         return ChatResponse(response=response)
     except Exception as e:

@@ -116,16 +116,16 @@ class TestShouldExtractMemory:
 
         assert MemoryManager._should_extract_memory("") is False
 
-    def test_question_returns_false(self):
+    def test_questions_reach_semantic_extraction(self):
         from db.memory_manager import MemoryManager
 
-        assert MemoryManager._should_extract_memory("What is the weather?") is False
+        assert MemoryManager._should_extract_memory("What is the weather?") is True
 
-    def test_command_prefix_returns_false(self):
+    def test_commands_reach_semantic_extraction(self):
         from db.memory_manager import MemoryManager
 
-        assert MemoryManager._should_extract_memory("Please find my emails") is False
-        assert MemoryManager._should_extract_memory("send an email to Philip") is False
+        assert MemoryManager._should_extract_memory("Please find my emails") is True
+        assert MemoryManager._should_extract_memory("send an email to Philip") is True
 
     def test_personal_statement_returns_true(self):
         from db.memory_manager import MemoryManager
@@ -136,10 +136,10 @@ class TestShouldExtractMemory:
         )
         assert MemoryManager._should_extract_memory("I prefer morning meetings") is True
 
-    def test_very_short_returns_false(self):
+    def test_short_turns_reach_semantic_extraction(self):
         from db.memory_manager import MemoryManager
 
-        assert MemoryManager._should_extract_memory("ok") is False
+        assert MemoryManager._should_extract_memory("ok") is True
 
 
 # ---------------------------------------------------------------------------
