@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Query
@@ -24,6 +25,15 @@ class TurnRequest(BaseModel):
 
 class ApprovalRequestBody(BaseModel):
     approved: bool
+
+
+def browser_event(kind: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Project a durable event into browser-safe event data."""
+    safe_payload = dict(payload)
+    provider_state = safe_payload.pop("provider_state", None)
+    if isinstance(provider_state, dict) and provider_state.get("usage"):
+        safe_payload["usage"] = provider_state["usage"]
+    return {"kind": getattr(kind, "value", str(kind)), "payload": safe_payload}
 
 
 def _report_background_failure(task: asyncio.Task[object]) -> None:
@@ -101,7 +111,8 @@ def create_app(runtime: HeathcliffRuntime) -> FastAPI:
                     idle_polls = 0
                     for event in batch:
                         cursor = event.sequence
-                        yield f"id: {cursor}\nevent: {event.kind.value}\ndata: {json.dumps(event.model_dump(mode='json'))}\n\n"
+                        payload = browser_event(event.kind, event.payload)
+                        yield f"id: {cursor}\nevent: {event.kind.value}\ndata: {json.dumps(payload)}\n\n"
                         if event.kind.value in {
                             "approval.required",
                             "turn.completed",

@@ -39,6 +39,15 @@
 - [x] Cover runtime profiles, event persistence, analytics, and focused Streamlit rendering with tests
 - [x] Register callable view renderers with unique Streamlit routes so the control panel does not render blank pages
 
+## Next.js UI replacement (2026-09-05)
+
+- [x] Create the initial responsive chat shell with shadcn Sidebar 01 and AI Elements PromptInput
+- [x] Add the Runtime V2 same-origin chat gateway and streamed text rendering
+- [ ] Add server-side authentication
+- [x] Add Memory and Settings routes to the shared application shell
+- [ ] Connect live conversation history, Memory, and Settings
+- [ ] Retire Streamlit only after replacement acceptance checks pass
+
 ## Spotify Reliability (2026-08-23)
 
 - [x] Move Spotify authorization out of task-worker terminal input and into Agent Controls

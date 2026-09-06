@@ -27,8 +27,10 @@ class EventKind(str, Enum):
     INPUT_ADMITTED = "input.admitted"
     TURN_STARTED = "turn.started"
     MODEL_STARTED = "model.started"
+    MODEL_TEXT_DELTA = "model.text_delta"
     MODEL_COMPLETED = "model.completed"
     TOOL_PROPOSED = "tool.proposed"
+    TOOL_DISPATCHED = "tool.dispatched"
     TOOL_COMPLETED = "tool.completed"
     TOOL_OUTCOME_UNKNOWN = "tool.outcome_unknown"
     APPROVAL_REQUIRED = "approval.required"
@@ -181,6 +183,7 @@ class ToolCall(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    provider_call_id: Optional[str] = None
     idempotency_key: str = Field(default_factory=lambda: str(uuid4()))
 
 

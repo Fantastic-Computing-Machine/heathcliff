@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -13,6 +14,7 @@ from core.runtime.context import build_context
 from core.runtime.contracts import (
     ApprovalDecision,
     ApprovalRequest,
+    ApprovalStatus,
     EventKind,
     ModelRequest,
     PendingInput,
@@ -62,6 +64,7 @@ class HeathcliffRuntime:
         self.artifact_store = artifact_store
         self._thread_locks: dict[UUID, asyncio.Lock] = {}
         self._cancelled: set[UUID] = set()
+        self._active: dict[UUID, asyncio.Task[Any]] = {}
 
     async def create_thread(self) -> Thread:
         return await self.store.create_thread()
@@ -96,6 +99,9 @@ class HeathcliffRuntime:
 
     async def cancel(self, turn_id: UUID) -> None:
         self._cancelled.add(turn_id)
+        task = self._active.get(turn_id)
+        if task is not None:
+            task.cancel()
 
     async def decide_approval(self, decision: ApprovalDecision) -> Turn:
         approval = await self.store.decide_approval(decision)
@@ -107,6 +113,7 @@ class HeathcliffRuntime:
                 payload={
                     "approval_id": str(approval.id),
                     "approved": decision.approved,
+                    "call_id": str(approval.tool_call.id),
                 },
             )
         )
@@ -121,8 +128,6 @@ class HeathcliffRuntime:
                 turn, TurnStatus.CANCELLED, EventKind.TURN_CANCELLED
             )
         await self.store.set_turn_status(turn.id, TurnStatus.RUNNING)
-        result = (await self._execute_calls(turn, [approval.tool_call]))[0]
-        await self._append_tool_result(turn, approval.tool_call, result)
         return await self._run_turn(turn, existing=True)
 
     async def _run_turn(
@@ -130,6 +135,9 @@ class HeathcliffRuntime:
     ) -> Turn:
         lock = self._thread_locks.setdefault(turn.thread_id, asyncio.Lock())
         async with lock:
+            task = asyncio.current_task()
+            if task is not None:
+                self._active[turn.id] = task
             lease = RuntimeLease(
                 holder=self.instance_id,
                 expires_at=utcnow() + timedelta(seconds=self.lease_seconds),
@@ -149,9 +157,16 @@ class HeathcliffRuntime:
                                 thread_id=turn.thread_id,
                                 turn_id=turn.id,
                                 kind=EventKind.TURN_STARTED,
+                                payload={"input_id": str(turn.input_id)},
                             )
                         )
-                    result = await self._model_loop(turn)
+                    try:
+                        result = await self._model_loop(turn)
+                    except asyncio.CancelledError:
+                        result = await self._finish(turn, TurnStatus.CANCELLED, EventKind.TURN_CANCELLED)
+                    except Exception:
+                        result = await self._finish(turn, TurnStatus.FAILED, EventKind.TURN_FAILED,
+                                                    {"error": "Model or runtime execution failed"})
                     if trace is not None:
                         trace.update(
                             output={
@@ -161,6 +176,7 @@ class HeathcliffRuntime:
                         )
                     return result
             finally:
+                self._active.pop(turn.id, None)
                 await self.store.release_lease(lease.name, self.instance_id)
 
     async def _model_loop(self, turn: Turn) -> Turn:
@@ -170,6 +186,10 @@ class HeathcliffRuntime:
                 return await self._finish(
                     turn, TurnStatus.CANCELLED, EventKind.TURN_CANCELLED
                 )
+            events = await self.store.events(turn.thread_id)
+            paused = await self._complete_pending_calls(turn, events)
+            if paused is not None:
+                return paused
             events = await self.store.events(turn.thread_id)
             if self.compactor is not None:
                 await self.compactor.maybe_compact(turn.thread_id)
@@ -206,26 +226,43 @@ class HeathcliffRuntime:
                     "tool_count": len(request.tools),
                 },
             ) as trace:
-                text, calls, provider_state = await self._consume_model(call)
+                async def publish_text_delta(delta: str) -> None:
+                    await self.store.append_event(
+                        RuntimeEvent(
+                            thread_id=turn.thread_id,
+                            turn_id=turn.id,
+                            kind=EventKind.MODEL_TEXT_DELTA,
+                            payload={"text": delta},
+                        )
+                    )
+
+                text, calls, provider_state = await self._consume_model(
+                    call, publish_text_delta
+                )
                 if trace is not None:
                     trace.update(
                         output={
                             "text": text,
-                            "tool_calls": [
-                                call.model_dump(mode="json") for call in calls
-                            ],
-                            "provider_state": provider_state,
+                            "tool_calls": [call.name for call in calls],
                         }
                     )
-            if not calls:
-                completed = await self.store.append_event(
+            await self.store.append_event(
                     RuntimeEvent(
                         thread_id=turn.thread_id,
                         turn_id=turn.id,
                         kind=EventKind.MODEL_COMPLETED,
-                        payload={"text": text, "provider_state": provider_state},
+                        payload={"text": text, "provider_state": provider_state,
+                                 "calls": [tool.model_dump(mode="json") for tool in calls]},
                     )
                 )
+            if provider_state.get("safety") or provider_state.get("finish_reason") not in {None, "STOP"}:
+                return await self._finish(turn, TurnStatus.FAILED, EventKind.TURN_FAILED,
+                                         {"error": "Model stopped before completing the request",
+                                          "finish_reason": provider_state.get("finish_reason"), "partial_response": text})
+            if not calls:
+                if not text.strip():
+                    return await self._finish(turn, TurnStatus.FAILED, EventKind.TURN_FAILED,
+                                             {"error": "Model returned no response"})
                 finished = await self._finish(
                     turn,
                     TurnStatus.COMPLETED,
@@ -242,36 +279,13 @@ class HeathcliffRuntime:
                         kind=EventKind.TOOL_PROPOSED,
                         payload={
                             "call": tool_call.model_dump(mode="json"),
-                            "provider_state": provider_state,
+                            "contract": self.tools.get(tool_call.name).contract.model_dump(mode="json"),
                         },
                     )
                 )
-                if self.tools.requires_approval(tool_call):
-                    contract = self.tools.get(tool_call.name).contract
-                    approval = ApprovalRequest(
-                        thread_id=turn.thread_id,
-                        turn_id=turn.id,
-                        tool_call=tool_call,
-                        resource_scope=contract.resource_scope,
-                    )
-                    await self.store.save_approval(approval)
-                    await self.store.set_turn_status(
-                        turn.id, TurnStatus.WAITING_FOR_APPROVAL
-                    )
-                    await self.store.append_event(
-                        RuntimeEvent(
-                            thread_id=turn.thread_id,
-                            turn_id=turn.id,
-                            kind=EventKind.APPROVAL_REQUIRED,
-                            payload=approval.model_dump(mode="json"),
-                        )
-                    )
-                    return turn.model_copy(
-                        update={"status": TurnStatus.WAITING_FOR_APPROVAL}
-                    )
-            results = await self._execute_calls(turn, calls)
-            for tool_call, result in zip(calls, results):
-                await self._append_tool_result(turn, tool_call, result)
+            paused = await self._complete_pending_calls(turn, await self.store.events(turn.thread_id))
+            if paused is not None:
+                return paused
         return await self._finish(
             turn,
             TurnStatus.FAILED,
@@ -279,24 +293,78 @@ class HeathcliffRuntime:
             {"error": "maximum model steps exceeded"},
         )
 
+    async def _complete_pending_calls(self, turn: Turn, events: list[RuntimeEvent]) -> Turn | None:
+        relevant = [event for event in events if event.turn_id == turn.id]
+        completed = {event.payload.get("call_id") for event in relevant
+                     if event.kind in {EventKind.TOOL_COMPLETED, EventKind.TOOL_OUTCOME_UNKNOWN}}
+        dispatched = {event.payload.get("call_id") for event in relevant
+                      if event.kind == EventKind.TOOL_DISPATCHED}
+        calls = []
+        for event in relevant:
+            if event.kind != EventKind.TOOL_PROPOSED:
+                continue
+            call = ToolCall.model_validate(event.payload["call"])
+            if str(call.id) in completed:
+                continue
+            contract = self.tools.get(call.name).contract
+            if event.payload.get("contract", contract.model_dump(mode="json")) != contract.model_dump(mode="json"):
+                raise ValueError("Proposed tool contract changed; refusing replay")
+            if str(call.id) in dispatched and contract.effect.value != "read":
+                await self._append_tool_result(turn, call, ToolResult(call_id=call.id,
+                    outcome=ToolOutcome.OUTCOME_UNKNOWN, error="Interrupted dispatch; reconcile provider state before retry"))
+                return await self._finish(turn, TurnStatus.FAILED, EventKind.TURN_FAILED,
+                                          {"error": "An external action has an unknown outcome"})
+            if self.tools.requires_approval(call):
+                approval_event = next((item for item in relevant if item.kind == EventKind.APPROVAL_REQUIRED
+                                       and item.payload["tool_call"]["id"] == str(call.id)), None)
+                approval = (await self.store.get_approval(UUID(approval_event.payload["id"]))) if approval_event else None
+                if approval and (approval.expires_at <= utcnow() or approval.status == ApprovalStatus.REJECTED):
+                    return await self._finish(turn, TurnStatus.CANCELLED, EventKind.TURN_CANCELLED)
+                if approval is None:
+                    approval = ApprovalRequest(thread_id=turn.thread_id, turn_id=turn.id,
+                                               tool_call=call, resource_scope=contract.resource_scope)
+                    await self.store.save_approval(approval)
+                    await self.store.append_event(RuntimeEvent(thread_id=turn.thread_id, turn_id=turn.id,
+                        kind=EventKind.APPROVAL_REQUIRED, payload=approval.model_dump(mode="json")))
+                if approval.status != ApprovalStatus.APPROVED:
+                    await self.store.set_turn_status(turn.id, TurnStatus.WAITING_FOR_APPROVAL)
+                    return turn.model_copy(update={"status": TurnStatus.WAITING_FOR_APPROVAL})
+            calls.append(call)
+        if calls:
+            results = await self._execute_calls(turn, calls)
+            for call, result in zip(calls, results):
+                await self._append_tool_result(turn, call, result)
+            if any(result.outcome == ToolOutcome.OUTCOME_UNKNOWN for result in results):
+                return await self._finish(turn, TurnStatus.FAILED, EventKind.TURN_FAILED,
+                                          {"error": "An external action has an unknown outcome; no automatic retry"})
+        return None
+
     async def _consume_model(
-        self, call: Any
+        self, call: Any, publish_text_delta: Callable[[str], Awaitable[None]] | None = None
     ) -> tuple[str, list[ToolCall], dict[str, Any]]:
         text: list[str] = []
         tool_calls: list[ToolCall] = []
         provider_state: dict[str, Any] = {}
         async for event in self.provider.stream(call):
             if event.kind == "text_delta":
-                text.append(str(event.data.get("text", "")))
+                delta = str(event.data.get("text", ""))
+                text.append(delta)
+                if delta and publish_text_delta is not None:
+                    await publish_text_delta(delta)
             elif event.kind == "tool_call":
                 tool_calls.append(
                     ToolCall(
                         name=event.data["name"],
                         arguments=event.data.get("arguments", {}),
+                        provider_call_id=event.data.get("provider_call_id"),
                     )
                 )
-            if event.data.get("thought_signature"):
-                provider_state["thought_signature"] = event.data["thought_signature"]
+            elif event.kind == "usage":
+                provider_state["usage"] = event.data
+            elif event.kind == "completed":
+                provider_state.update(event.data)
+            elif event.kind == "safety":
+                provider_state["safety"] = event.data
         return "".join(text), tool_calls, provider_state
 
     async def _execute_calls(
@@ -337,6 +405,8 @@ class HeathcliffRuntime:
             f"runtime.tool.{call.name}", as_type="tool", input=trace_input
         ) as trace:
             if contract.effect.value == "read":
+                await self.store.append_event(RuntimeEvent(thread_id=turn.thread_id, turn_id=turn.id,
+                    kind=EventKind.TOOL_DISPATCHED, payload={"call_id": str(call.id)}))
                 result = await self.tools.execute(call)
             else:
                 lease = RuntimeLease(
@@ -358,6 +428,8 @@ class HeathcliffRuntime:
                     )
                 else:
                     try:
+                        await self.store.append_event(RuntimeEvent(thread_id=turn.thread_id, turn_id=turn.id,
+                            kind=EventKind.TOOL_DISPATCHED, payload={"call_id": str(call.id)}))
                         result = await self.tools.execute(call)
                     finally:
                         await self.store.release_lease(lease.name, lease.holder)
@@ -391,6 +463,7 @@ class HeathcliffRuntime:
                 kind=kind,
                 payload={
                     "call_id": str(call.id),
+                    "provider_call_id": call.provider_call_id,
                     "tool": call.name,
                     "outcome": result.outcome.value,
                     "output": result.output,

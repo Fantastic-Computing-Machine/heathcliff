@@ -526,3 +526,20 @@ Next steps: Integration testing, error recovery, Docker containerization, troubl
   can be binary, so they are base64 encoded and the SQLite snapshot serializer
   is binary-safe. This prevents successful V2 model/tool loops from crashing
   during state persistence.
+
+## 2026-09-05 — Next.js chat shell
+
+- The replacement frontend lives in `frontend/` and now uses shadcn Sidebar 01
+  primitives with the AI Elements `PromptInput` composer. The initial empty
+  chat state is a black, sparse, ChatGPT-style shell with a responsive sidebar
+  drawer and a centered `Ready when you are.` composer state.
+- The root route redirects to `/chat`; the legacy Python daemon remains
+  separate at port 8700. Next server routes now create Runtime V2 threads,
+  submit turns, and proxy SSE events through the same origin to the chat page.
+- `npm run build` passes. Browser validation confirmed Enter submits text,
+  streamed model text renders before completion, and the mobile sidebar exposes
+  New chat, Memory, Settings, and chat history. A live harmless `hello` turn
+  completed through the daemon on 2026-09-06.
+- Memory and Settings now have navigable `/memory` and `/settings` routes using
+  the same responsive sidebar shell. Their Runtime V2 data and controls remain
+  the next implementation step.

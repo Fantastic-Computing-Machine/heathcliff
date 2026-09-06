@@ -1,5 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS vector;
-
 CREATE TABLE IF NOT EXISTS runtime_threads (
     id uuid PRIMARY KEY,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -74,7 +72,6 @@ CREATE TABLE IF NOT EXISTS personal_memories (
     valid_from timestamptz,
     valid_until timestamptz,
     supersedes_id uuid REFERENCES personal_memories(id),
-    embedding vector(3072),
     created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS personal_memories_subject_idx ON personal_memories(subject);
